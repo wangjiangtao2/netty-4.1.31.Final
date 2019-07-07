@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<checkstyle version="5.7">
+<file name="D:\work\netty-netty-4.1.31.Final\testsuite-shading\src\test\java\io\netty\testsuite\shading\ShadingIT.java">
+<error line="0" severity="error" message="File does not end with a newline." source="com.puppycrawl.tools.checkstyle.checks.NewlineAtEndOfFileCheck"/>
+<error line="0" severity="error" message="invalid newline character (expected: CRLF)" source="io.netty.build.checkstyle.NewlineCheck"/>
+</file>
+</checkstyle>

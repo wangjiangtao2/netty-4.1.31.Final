@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<checkstyle version="5.7">
+<file name="D:\work\netty-netty-4.1.31.Final\testsuite-http2\src\main\java\io\netty\testsuite\http2\HelloWorldHttp1Handler.java">
+<error line="0" severity="error" message="File does not end with a newline." source="com.puppycrawl.tools.checkstyle.checks.NewlineAtEndOfFileCheck"/>
+<error line="0" severity="error" message="invalid newline character (expected: CRLF)" source="io.netty.build.checkstyle.NewlineCheck"/>
+</file>
+<file name="D:\work\netty-netty-4.1.31.Final\testsuite-http2\src\main\java\io\netty\testsuite\http2\HelloWorldHttp2Handler.java">
+<error line="0" severity="error" message="File does not end with a newline." source="com.puppycrawl.tools.checkstyle.checks.NewlineAtEndOfFileCheck"/>
+<error line="0" severity="error" message="invalid newline character (expected: CRLF)" source="io.netty.build.checkstyle.NewlineCheck"/>
+</file>
+<file name="D:\work\netty-netty-4.1.31.Final\testsuite-http2\src\main\java\io\netty\testsuite\http2\HelloWorldHttp2HandlerBuilder.java">
+<error line="0" severity="error" message="File does not end with a newline." source="com.puppycrawl.tools.checkstyle.checks.NewlineAtEndOfFileCheck"/>
+<error line="0" severity="error" message="invalid newline character (expected: CRLF)" source="io.netty.build.checkstyle.NewlineCheck"/>
+</file>
+<file name="D:\work\netty-netty-4.1.31.Final\testsuite-http2\src\main\java\io\netty\testsuite\http2\Http2Server.java">
+<error line="0" severity="error" message="File does not end with a newline." source="com.puppycrawl.tools.checkstyle.checks.NewlineAtEndOfFileCheck"/>
+<error line="0" severity="error" message="invalid newline character (expected: CRLF)" source="io.netty.build.checkstyle.NewlineCheck"/>
+</file>
+<file name="D:\work\netty-netty-4.1.31.Final\testsuite-http2\src\main\java\io\netty\testsuite\http2\Http2ServerInitializer.java">
+<error line="0" severity="error" message="File does not end with a newline." source="com.puppycrawl.tools.checkstyle.checks.NewlineAtEndOfFileCheck"/>
+<error line="0" severity="error" message="invalid newline character (expected: CRLF)" source="io.netty.build.checkstyle.NewlineCheck"/>
+</file>
+<file name="D:\work\netty-netty-4.1.31.Final\testsuite-http2\src\main\java\io\netty\testsuite\http2\package-info.java">
+<error line="0" severity="error" message="File does not end with a newline." source="com.puppycrawl.tools.checkstyle.checks.NewlineAtEndOfFileCheck"/>
+<error line="0" severity="error" message="invalid newline character (expected: CRLF)" source="io.netty.build.checkstyle.NewlineCheck"/>
+</file>
+</checkstyle>
