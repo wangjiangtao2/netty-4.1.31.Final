@@ -16,6 +16,7 @@
 package io.netty.channel;
 
 import io.netty.buffer.ByteBufAllocator;
+import io.netty.channel.nio.AbstractNioByteChannel;
 import io.netty.channel.socket.ChannelOutputShutdownEvent;
 import io.netty.channel.socket.ChannelOutputShutdownException;
 import io.netty.util.DefaultAttributeMap;
@@ -39,9 +40,10 @@ import java.util.concurrent.RejectedExecutionException;
 
 /**
  * A skeletal {@link Channel} implementation.
- *
+ * <p>
+ * 实现Channel大部分功能
  * 网络I/O操作直接调用DefaultChannelPipeline的相关方法,它对应的ChannelHandler进行具体的逻辑处理
- *
+ * <p>
  * register
  * bind(final SocketAddress localAddress, final ChannelPromise promise)
  * disconnect(final ChannelPromise promise)
@@ -52,28 +54,55 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
 
     private static final InternalLogger logger = InternalLoggerFactory.getInstance(AbstractChannel.class);
 
-    /** 父类Channel，如果是服务端，则为空，若为客户端，则为服务端channel */
+    /**
+     * 父类Channel，如果是服务端，则为空，若为客户端，则为服务端channel
+     */
     private final Channel parent;
-    /** 当前channel的唯一id(mac地址+随机序列号+时间戳等) @see  DefaultChannelId#DefaultChannelId()*/
+
+    /**
+     * 当前channel的唯一id(mac地址+随机序列号+时间戳等)
+     *
+     * @see DefaultChannelId#DefaultChannelId()
+     */
     private final ChannelId id;
-    /** Unsafe对象，封装ByteBuf的读写过程   服务端: NioMessageUnsafe ;  客户端:NioByteUnsafe */
+    /**
+     * Unsafe对象，封装ByteBuf的读写过程
+     *
+     * @see io.netty.channel.nio.AbstractNioMessageChannel.NioMessageUnsafe   服务端
+     * @see AbstractNioByteChannel.NioByteUnsafe    客户端
+     */
     private final Unsafe unsafe;
-    /** 当前Channel对应的DefaultChannelPipeline */
+    /**
+     * 当前Channel对应的pipeline,保存 ChannelHandler 的 List，用于处理或拦截 Channel 的入站事件和出站操作
+     *
+     * @see DefaultChannelPipeline
+     * @see ChannelPipeline
+     */
     private final DefaultChannelPipeline pipeline;
 
-    /** 当前Channel注册所在的EventLoop 用来处理读写的线程 */
+    /**
+     * 当前Channel注册所在的 NioEventLoop 用来处理读写的线程
+     */
     private volatile EventLoop eventLoop;
 
-    /** 当前Channel的本地绑定地址 */
+    /**
+     * 当前Channel的本地绑定地址
+     */
     private volatile SocketAddress localAddress;
-    /** 当前Channel通信的远程Socket地址 */
+    /**
+     * 当前Channel通信的远程Socket地址
+     */
     private volatile SocketAddress remoteAddress;
 
-    /** 当前Channel是否已被注册 */
+    /**
+     * 当前Channel是否已被注册
+     */
     private volatile boolean registered;
     private boolean closeInitiated;
 
-    /** Cache for the string representation of this channel */
+    /**
+     * Cache for the string representation of this channel
+     */
     private boolean strValActive;
     private String strVal;
 
@@ -95,32 +124,36 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
             new NotYetConnectedException(), AbstractUnsafe.class, "flush0()");
 
     /**
+     * 创建实例: 主要给id、unsafe、pipeline属性赋值
+     *
      * Creates a new instance.
      *
-     * @param parent
-     *        the parent of this channel. {@code null} if there's no parent.
+     * @param parent the parent of this channel. {@code null} if there's no parent.
      */
     protected AbstractChannel(Channel parent) {
         /** 若是服务端channel，这里为null，若是客户端channel，这里的parent就是创建他的服务端channel */
         this.parent = parent;
-        /** 生成id MACHINE_ID+ PROCESS_ID_LEN + SEQUENCE_LEN + TIMESTAMP_LEN + RANDOM_LEN */
+        /** 生成id MACHINE_ID+ PROCESS_ID_LEN + SEQUENCE_LEN + TIMESTAMP_LEN + RANDOM_LEN
+         * @see DefaultChannelId#DefaultChannelId()
+         */
         id = newId();
         /**
          * 生成底层通信方法 看源码里面的方法
          *
-         * 若是服务端channel，这里调用AbstractNioMessageChannel的方法生成 NioMessageUnsafe
-         * 若是客户端channel，这里调用AbstractNioByteChannel的方法生成 NioByteUnsafe
+         * @see  io.netty.channel.nio.AbstractNioMessageChannel.NioMessageUnsafe   服务端对应的Unsafe
+         * @see AbstractNioByteChannel.NioByteUnsafe    客户端对应的Unsafe
          */
         unsafe = newUnsafe();
-        /** 要看源码 生成 DefaultChannelPipeline  pipeline 主要由 headContext -> self-define ... -> tailContext 组成 */
+        /** 生成 DefaultChannelPipeline并保存，  pipeline 主要由 headContext -> self-define ... -> tailContext 组成
+         * @see DefaultChannelPipeline#DefaultChannelPipeline(io.netty.channel.Channel)
+         */
         pipeline = newChannelPipeline();
     }
 
     /**
      * Creates a new instance.
      *
-     * @param parent
-     *        the parent of this channel. {@code null} if there's no parent.
+     * @param parent the parent of this channel. {@code null} if there's no parent.
      */
     protected AbstractChannel(Channel parent, ChannelId id) {
         this.parent = parent;
@@ -129,12 +162,51 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
         pipeline = newChannelPipeline();
     }
 
+
+    /**
+     * Create a new {@link AbstractUnsafe} instance which will be used for the life-time of the {@link Channel}
+     * 抽象方法 具体获取Unsafe的方式交给子类实现,
+     */
+    protected abstract AbstractUnsafe newUnsafe();
+
+    /**
+     * 返回Channel标识的id
+     */
     @Override
     public final ChannelId id() {
         return id;
     }
 
     /**
+     * 返回UnSafe对象
+     */
+    @Override
+    public Unsafe unsafe() {
+        return unsafe;
+    }
+
+    @Override
+    public ChannelPipeline pipeline() {
+        return pipeline;
+    }
+    @Override
+    public Channel parent() {
+        return parent;
+    }
+
+    @Override
+    public EventLoop eventLoop() {
+        EventLoop eventLoop = this.eventLoop;
+        if (eventLoop == null) {
+            throw new IllegalStateException("channel not registered to an event loop");
+        }
+        return eventLoop;
+    }
+
+
+    /**
+     * 返回 DefaultChannelId 实例
+     *
      * Returns a new {@link DefaultChannelId} instance. Subclasses may override this method to assign custom
      * {@link ChannelId}s to {@link Channel}s that use the {@link AbstractChannel#AbstractChannel(Channel)} constructor.
      */
@@ -143,6 +215,7 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
     }
 
     /**
+     * 返回DefaultChannelPipeline实例
      * Returns a new {@link DefaultChannelPipeline} instance.
      */
     protected DefaultChannelPipeline newChannelPipeline() {
@@ -181,14 +254,12 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
         return buf != null ? buf.bytesBeforeWritable() : Long.MAX_VALUE;
     }
 
+    /**
+     * 是否已经注册
+     */
     @Override
-    public Channel parent() {
-        return parent;
-    }
-
-    @Override
-    public ChannelPipeline pipeline() {
-        return pipeline;
+    public boolean isRegistered() {
+        return registered;
     }
 
     @Override
@@ -196,15 +267,9 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
         return config().getAllocator();
     }
 
-    @Override
-    public EventLoop eventLoop() {
-        EventLoop eventLoop = this.eventLoop;
-        if (eventLoop == null) {
-            throw new IllegalStateException("channel not registered to an event loop");
-        }
-        return eventLoop;
-    }
-
+    /**
+     * 获取本地绑定地址
+     */
     @Override
     public SocketAddress localAddress() {
         SocketAddress localAddress = this.localAddress;
@@ -217,14 +282,6 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
             }
         }
         return localAddress;
-    }
-
-    /**
-     * @deprecated no use-case for this.
-     */
-    @Deprecated
-    protected void invalidateLocalAddress() {
-        localAddress = null;
     }
 
     /**
@@ -249,22 +306,21 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
      * @deprecated no use-case for this.
      */
     @Deprecated
-    protected void invalidateRemoteAddress() {
-        remoteAddress = null;
+    protected void invalidateLocalAddress() {
+        localAddress = null;
     }
 
     /**
-     * 是否已经注册
+     * @deprecated no use-case for this.
      */
-    @Override
-    public boolean isRegistered() {
-        return registered;
+    @Deprecated
+    protected void invalidateRemoteAddress() {
+        remoteAddress = null;
     }
 
 
 
     /******* ChannelOutboundInvoker接口中的方法都交给pipeline对象代理********/
-
     @Override
     public ChannelFuture bind(SocketAddress localAddress) {
         return pipeline.bind(localAddress);
@@ -333,7 +389,7 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
 
     @Override
     public Channel read() {
-        //最后传播到 AbstractChannel的 beginRead 方法  p856
+        //最后传播到 AbstractChannel 的 beginRead 方法  p856
         pipeline.read();
         return this;
     }
@@ -378,8 +434,6 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
         return pipeline.newFailedFuture(cause);
     }
 
-
-
 /********************ChannelOutboundInvoker接口*************/
     /**
      * 返回ChannelFuture
@@ -389,107 +443,29 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
         return closeFuture;
     }
 
-    /**
-     * 返回UnSafe对象
-     */
-    @Override
-    public Unsafe unsafe() {
-        return unsafe;
-    }
-
-    /**
-     * Create a new {@link AbstractUnsafe} instance which will be used for the life-time of the {@link Channel}
-     * 抽象方法 具体获取Unsafe的方式交给子类实现,
-     */
-    protected abstract AbstractUnsafe newUnsafe();
-
-    /**
-     * Returns the ID of this channel.
-     */
-    @Override
-    public final int hashCode() {
-        return id.hashCode();
-    }
-
-    /**
-     * Returns {@code true} if and only if the specified object is identical
-     * with this channel (i.e: {@code this == o}).
-     */
-    @Override
-    public final boolean equals(Object o) {
-        return this == o;
-    }
-
-    @Override
-    public final int compareTo(Channel o) {
-        if (this == o) {
-            return 0;
-        }
-
-        return id().compareTo(o.id());
-    }
-
-    /**
-     * Returns the {@link String} representation of this channel.  The returned
-     * string contains the {@linkplain #hashCode() ID}, {@linkplain #localAddress() local address},
-     * and {@linkplain #remoteAddress() remote address} of this channel for
-     * easier identification.
-     */
-    @Override
-    public String toString() {
-        boolean active = isActive();
-        if (strValActive == active && strVal != null) {
-            return strVal;
-        }
-
-        SocketAddress remoteAddr = remoteAddress();
-        SocketAddress localAddr = localAddress();
-        if (remoteAddr != null) {
-            StringBuilder buf = new StringBuilder(96)
-                .append("[id: 0x")
-                .append(id.asShortText())
-                .append(", L:")
-                .append(localAddr)
-                .append(active? " - " : " ! ")
-                .append("R:")
-                .append(remoteAddr)
-                .append(']');
-            strVal = buf.toString();
-        } else if (localAddr != null) {
-            StringBuilder buf = new StringBuilder(64)
-                .append("[id: 0x")
-                .append(id.asShortText())
-                .append(", L:")
-                .append(localAddr)
-                .append(']');
-            strVal = buf.toString();
-        } else {
-            StringBuilder buf = new StringBuilder(16)
-                .append("[id: 0x")
-                .append(id.asShortText())
-                .append(']');
-            strVal = buf.toString();
-        }
-
-        strValActive = active;
-        return strVal;
-    }
-
     @Override
     public final ChannelPromise voidPromise() {
         return pipeline.voidPromise();
     }
 
+
+
     /**
      * {@link Unsafe} implementation which sub-classes must extend and use.
-     * Unsafe的抽象实现，虽然是抽象类，但没有抽象的方法，只是对某些方法提供了空实现；一些方法的关键实现是交给AbstractChannel的特定子类
+     * Unsafe的抽象实现，虽然是抽象类，但没有抽象的方法，只是对某些方法提供了空实现；一些方法的关键实现是交给AbstractChannel的特定子类实现
      */
     protected abstract class AbstractUnsafe implements Unsafe {
-
+        /**
+         * ChannelOutboundBuffer实质上是无界的单向链表
+         *  Netty 向站外输出数据的过程统一通过 ChannelOutboundBuffer 类进行封装，目的是为了提高网络的吞吐量，
+         *  在外面调用 write 的时候，数据并没有写到 Socket，而是写到了 ChannelOutboundBuffer 这里，当调用 flush 的时候，才真正的向 Socket 写出。
+         */
         private volatile ChannelOutboundBuffer outboundBuffer = new ChannelOutboundBuffer(AbstractChannel.this);
         private RecvByteBufAllocator.Handle recvHandle;
         private boolean inFlush0;
-        /** true if the channel has never been registered, false otherwise */
+        /**
+         * true if the channel has never been registered, false otherwise
+         */
         private boolean neverRegistered = true;
 
         private void assertEventLoop() {
@@ -520,7 +496,6 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
         }
 
         /**
-         *
          * 将当前Unsafe对应的Channel注册到EventLoop的多路复用器上，然后调用DefaultChannelPipeline的fireChannelRegistered方法
          * 如果Channel被激活，则调用DefaultChannelPipeline的fireChannelActive方法
          */
@@ -633,15 +608,15 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
 
             // See: https://github.com/netty/netty/issues/576
             if (Boolean.TRUE.equals(config().getOption(ChannelOption.SO_BROADCAST)) &&
-                localAddress instanceof InetSocketAddress &&
-                !((InetSocketAddress) localAddress).getAddress().isAnyLocalAddress() &&
-                !PlatformDependent.isWindows() && !PlatformDependent.maybeSuperUser()) {
+                    localAddress instanceof InetSocketAddress &&
+                    !((InetSocketAddress) localAddress).getAddress().isAnyLocalAddress() &&
+                    !PlatformDependent.isWindows() && !PlatformDependent.maybeSuperUser()) {
                 // Warn a user about the fact that a non-root user can't receive a
                 // broadcast packet on *nix if the socket is bound on non-wildcard address.
                 logger.warn(
                         "A non-root user can't receive a broadcast packet if the socket " +
-                        "is not bound to a wildcard address; binding to a non-wildcard " +
-                        "address (" + localAddress + ") anyway as requested.");
+                                "is not bound to a wildcard address; binding to a non-wildcard " +
+                                "address (" + localAddress + ") anyway as requested.");
             }
 
             // wasActive 在绑定成功前为 false
@@ -671,7 +646,7 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
         }
 
         /**
-         *  用户客户端或者服务端主动关闭连接
+         * 用户客户端或者服务端主动关闭连接
          */
         @Override
         public final void disconnect(final ChannelPromise promise) {
@@ -705,6 +680,7 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
 
         /**
          * 在链路关闭之前需要首先判断是否处于刷新状态，如果处于刷新状态说明还有消息尚未发送出去，需要等到所有消息发送完成再关闭链路，因此，将关闭操作封装成Runnable稍后再执行
+         *
          * @param promise
          */
         @Override
@@ -727,6 +703,7 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
         /**
          * Shutdown the output portion of the corresponding {@link Channel}.
          * For example this will clean up the {@link ChannelOutboundBuffer} and not allow any more writes.
+         *
          * @param cause The cause which may provide rational for the shutdown.
          */
         private void shutdownOutput(final ChannelPromise promise, Throwable cause) {
@@ -1173,7 +1150,7 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
 
     /**
      * Is called after the {@link Channel} is registered with its {@link EventLoop} as part of the register process.
-     *
+     * <p>
      * Sub-classes may override this method
      */
     protected void doRegister() throws Exception {
@@ -1206,7 +1183,7 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
 
     /**
      * Deregister the {@link Channel} from its {@link EventLoop}.
-     *
+     * <p>
      * Sub-classes may override this method
      */
     protected void doDeregister() throws Exception {
@@ -1309,4 +1286,79 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
             return this;
         }
     }
+
+
+    /**
+     * Returns the ID of this channel.
+     */
+    @Override
+    public final int hashCode() {
+        return id.hashCode();
+    }
+
+    /**
+     * Returns {@code true} if and only if the specified object is identical
+     * with this channel (i.e: {@code this == o}).
+     */
+    @Override
+    public final boolean equals(Object o) {
+        return this == o;
+    }
+
+    @Override
+    public final int compareTo(Channel o) {
+        if (this == o) {
+            return 0;
+        }
+
+        return id().compareTo(o.id());
+    }
+
+    /**
+     * Returns the {@link String} representation of this channel.  The returned
+     * string contains the {@linkplain #hashCode() ID}, {@linkplain #localAddress() local address},
+     * and {@linkplain #remoteAddress() remote address} of this channel for
+     * easier identification.
+     */
+    @Override
+    public String toString() {
+        boolean active = isActive();
+        if (strValActive == active && strVal != null) {
+            return strVal;
+        }
+
+        SocketAddress remoteAddr = remoteAddress();
+        SocketAddress localAddr = localAddress();
+        if (remoteAddr != null) {
+            StringBuilder buf = new StringBuilder(96)
+                    .append("[id: 0x")
+                    .append(id.asShortText())
+                    .append(", L:")
+                    .append(localAddr)
+                    .append(active ? " - " : " ! ")
+                    .append("R:")
+                    .append(remoteAddr)
+                    .append(']');
+            strVal = buf.toString();
+        } else if (localAddr != null) {
+            StringBuilder buf = new StringBuilder(64)
+                    .append("[id: 0x")
+                    .append(id.asShortText())
+                    .append(", L:")
+                    .append(localAddr)
+                    .append(']');
+            strVal = buf.toString();
+        } else {
+            StringBuilder buf = new StringBuilder(16)
+                    .append("[id: 0x")
+                    .append(id.asShortText())
+                    .append(']');
+            strVal = buf.toString();
+        }
+
+        strValActive = active;
+        return strVal;
+    }
+
+
 }
