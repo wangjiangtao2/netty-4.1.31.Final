@@ -38,6 +38,29 @@ import java.util.concurrent.atomic.AtomicLongFieldUpdater;
 import static java.lang.Math.min;
 
 /**
+ *
+ *1、ChannelOutboundBuffer 添加了N个 Entry
+ *                 Entry1           --->Entry2 --->  ...  ---> EntryN
+ *                   ↑                                          ↑
+ * flushedEntry   unflushedEntry                               tailEntry
+ *
+ * 2、当 flush 后的效果
+ *    Entry1      --->Entry2 --->  ...  ---> EntryN
+ *       ↑                                    ↑
+ *  flushedEntry   unflushedEntry           tailEntry
+ *
+ * 3、flush 后把所有的数据都写入 Socket 中
+ *    Entry1      --->Entry2 --->  ...  ---> EntryN
+ *
+ *  flushedEntry   unflushedEntry    tailEntry
+ *
+ * 4、当再次写入 Entry 后
+ *                              EntryN+1
+ *                              ↗  ↖
+ *   flushedEntry   unflushedEntry  tailEntry
+ *
+ *
+ *
  * (Transport implementors only) an internal data structure used by {@link AbstractChannel} to store its pending
  * outbound write requests.
  * <p>
@@ -74,12 +97,16 @@ public final class ChannelOutboundBuffer {
     // Entry(flushedEntry) --> ... Entry(unflushedEntry) --> ... Entry(tailEntry)
     //
     // The Entry that is the first in the linked-list structure that was flushed
+    // 缓存链表中被刷新的第一个元素
     private Entry flushedEntry;
     // The Entry which is the first unflushed in the linked-list structure
+    // 缓存链表中中第一个未刷新的元素
     private Entry unflushedEntry;
     // The Entry which represents the tail of the buffer
+    //缓存链表中的尾元素
     private Entry tailEntry;
     // The number of flushed entries that are not written yet
+    //刷新但还没有写入到 socket 中的数量
     private int flushed;
 
     private int nioBufferCount;
@@ -110,38 +137,52 @@ public final class ChannelOutboundBuffer {
      * the message was written.
      */
     public void addMessage(Object msg, int size, ChannelPromise promise) {
+        //创建一个新的Entry
         Entry entry = Entry.newInstance(msg, size, total(msg), promise);
+        //判断 tailEntry 是否为 null，如果为 null 说明链表为空。则把 flushedEntry 置为null。
         if (tailEntry == null) {
             flushedEntry = null;
         } else {
+            //如果 tailEntry 不为空，则把新添加的 Entry 添加到 tailEntry 后面 。
             Entry tail = tailEntry;
             tail.next = entry;
         }
+        //将新添加的 Entry 设置为 链表的 tailEntry。
         tailEntry = entry;
+        //如果 unflushedEntry 为null，说明没有未被刷新的元素。新添加的Entry 肯定是未被刷新的，则把当前 Entry 设置为 unflushedEntry 。
         if (unflushedEntry == null) {
             unflushedEntry = entry;
         }
 
         // increment pending bytes after adding message to the unflushed arrays.
         // See https://github.com/netty/netty/issues/1619
+        //统计未被刷新的元素的总大小。
         incrementPendingOutboundBytes(entry.pendingSize, false);
     }
 
     /**
      * Add a flush to this {@link ChannelOutboundBuffer}. This means all previous added messages are marked as flushed
      * and so you will be able to handle them.
+     *
+     * 当 addMessage 成功添加进 ChannelOutboundBuffer 后，就需要 flush 刷新到 Socket 中去。
+     * 但是这个方法并不是做刷新到 Socket 的操作。而是将 unflushedEntry 的引用转移到 flushedEntry 引用中，表示即将刷新这个 flushedEntry，至于为什么这么做？
+     * 答：因为 Netty 提供了 promise，这个对象可以做取消操作，例如，不发送这个 ByteBuf 了，所以，在 write 之后，flush 之前需要告诉 promise 不能做取消操作了。
      */
     public void addFlush() {
         // There is no need to process all entries if there was already a flush before and no new messages
         // where added in the meantime.
         //
         // See https://github.com/netty/netty/issues/2577
+        //通过 unflushedEntry 获取未被刷新元素 entry。
         Entry entry = unflushedEntry;
+        //如果 entry 为null 说明没有待刷新的元素，不执行任何操作
         if (entry != null) {
+            //如果 flushedEntry == null 说明当前没有正在刷新的任务，则把 entry 设置为 flushedEntry 刷新的起点。
             if (flushedEntry == null) {
                 // there is no flushedEntry yet, so start with the entry
                 flushedEntry = entry;
             }
+            //循环设置 entry， 设置这些 entry 状态设置为非取消状态，如果设置失败，则把这些entry 节点取消并使 totalPendingSize 减去这个节点的字节大小。
             do {
                 flushed ++;
                 if (!entry.promise.setUncancellable()) {
@@ -240,6 +281,7 @@ public final class ChannelOutboundBuffer {
      * messages are ready to be handled.
      */
     public boolean remove() {
+       // 获取 flushedEntry 节点，链表的头结点。如果获取不到清空 ByteBuf 缓存。
         Entry e = flushedEntry;
         if (e == null) {
             clearNioBuffers();
