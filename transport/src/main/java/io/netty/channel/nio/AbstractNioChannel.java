@@ -410,7 +410,8 @@ public abstract class AbstractNioChannel extends AbstractChannel {
     }
 
     /**
-     * Channel的注册,仅仅完成注册操作
+     * 将当前Channel注册到eventLoop的多路复用器上,仅仅完成注册操作
+     *
      * 如果当前注册返回的selectionKey已经被取消，则抛出CancelledKeyException异常，捕获该异常进行处理。
      * 如果是第一次处理该异常，调用多路复用器的selectNow方法将已经取消的selectionKey从多路复用器中删除屌。操作成功后，将selected置为true，说明之前失效的selectionKey已经被删除掉，
      *  继续发起下一次注册操作，如果成功则退出，
@@ -422,9 +423,7 @@ public abstract class AbstractNioChannel extends AbstractChannel {
         for (; ; ) {
             try {
                 /**
-                 * 将当前Channel注册到eventLoop的多路复用器上
-                 *
-                 * javaChannel 就是 jdk底层的 ServerSocketChannel
+                 * javaChannel 就是 jdk底层的 ServerSocketChannel/SocketChannel
                  * eventLoop().unwrappedSelector()：就是分配到的NioEventLoop线程的selector上
                  * ops 设置为 0，表示不关心任何事件
                  * this 将AbstractNioChannel的实现子类自身当作附件注册，表示后面还会将channel取出来用作它用 NioServerSocketChannel NioSocketChannel 线程
