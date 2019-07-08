@@ -60,7 +60,9 @@ public abstract class AbstractNioChannel extends AbstractChannel {
 
     private static final ClosedChannelException DO_CLOSE_CLOSED_CHANNEL_EXCEPTION = ThrowableUtil.unknownStackTrace(new ClosedChannelException(), AbstractNioChannel.class, "doClose()");
 
-    //jdk底层 ServerSocketChannel, SocketChannel 的公共类
+    /**
+     * jdk底层 ServerSocketChannel, SocketChannel 的公共类
+     */
     private final SelectableChannel ch;
 
     /**
