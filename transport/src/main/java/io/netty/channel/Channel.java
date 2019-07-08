@@ -364,7 +364,7 @@ public interface Channel extends AttributeMap, ChannelOutboundInvoker, Comparabl
         /**
          * Deregister the {@link Channel} of the {@link ChannelPromise} from {@link EventLoop} and notify the
          * {@link ChannelPromise} once the operation was complete.
-         * 注销channel先前分配的EventExecutor，完成后通知ChannelFuture
+         * 注销channel先前分配的EventLoop，完成后通知ChannelFuture
          */
         void deregister(ChannelPromise promise);
 
