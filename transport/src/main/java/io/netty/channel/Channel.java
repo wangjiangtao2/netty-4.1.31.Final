@@ -17,6 +17,8 @@ package io.netty.channel;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
+import io.netty.channel.nio.AbstractNioByteChannel;
+import io.netty.channel.nio.AbstractNioMessageChannel;
 import io.netty.channel.socket.DatagramChannel;
 import io.netty.channel.socket.DatagramPacket;
 import io.netty.channel.socket.ServerSocketChannel;
@@ -79,16 +81,16 @@ import java.net.SocketAddress;
  * ChannelOutboundInvoker接口主要提供了与网络链路相关的一些操作以及读写相关的操作，并统一返回了ChannelFuture对象，便于我们可以监听这些操作是否成功。
  * <p>
  * AbstractChannel
- *      AbstractNioChannel
- *          AbstractNioByteChannel
- *              NioSocketChannel
- *          AbstractNioMessageChannel
- *              NioServerSocketChannel
+ * AbstractNioChannel
+ * AbstractNioByteChannel
+ * NioSocketChannel
+ * AbstractNioMessageChannel
+ * NioServerSocketChannel
  * Unsafe
- *   AbstractUnsafe
- *      AbstractNioUnsafe
- *          NioByteUnsafe
- *          NioMessageUnsafe
+ * AbstractUnsafe
+ * AbstractNioUnsafe
+ * NioByteUnsafe
+ * NioMessageUnsafe
  * <p>
  * Netty网络操作抽象类，包括但不限于网络的读、写、客户端发起连接、主动关闭连接、链路关闭、获取通信双方的网络地址等。
  * 采用Facade模式进行统一封装，将网络I/O操作、网络I/O相关联的其他操作封装起来，统一对外提供
@@ -122,17 +124,16 @@ public interface Channel extends AttributeMap, ChannelOutboundInvoker, Comparabl
     /**
      * Returns an <em>internal-use-only</em> object that provides unsafe operations.
      * <p>
-     * 服务端channel:NioMessageUnsafe
-     * 客户端channel:NioByteUnsafe
+     *
+     * 服务端channel: {@link AbstractNioMessageChannel.NioMessageUnsafe}
+     * 客户端channel: {@link AbstractNioByteChannel.NioByteUnsafe}
      */
     Unsafe unsafe();
 
     /**
      * Return the assigned {@link ChannelPipeline}.
      * <p>
-     * 返回channel分配的 ChannelPipeline
-     *
-     * @see DefaultChannelPipeline
+     * 返回channel分配的 ChannelPipeline {@link DefaultChannelPipeline}
      */
     ChannelPipeline pipeline();
 
@@ -241,7 +242,6 @@ public interface Channel extends AttributeMap, ChannelOutboundInvoker, Comparabl
      */
     long bytesBeforeWritable();
 
-
     /**
      * Return the assigned {@link ByteBufAllocator} which will be used to allocate {@link ByteBuf}s.
      * ByteBuf 分配器
@@ -278,34 +278,6 @@ public interface Channel extends AttributeMap, ChannelOutboundInvoker, Comparabl
     interface Unsafe {
 
         /**
-         * Return the assigned {@link RecvByteBufAllocator.Handle} which will be used to allocate {@link ByteBuf}'s when
-         * receiving data.
-         */
-        RecvByteBufAllocator.Handle recvBufAllocHandle();
-
-        /**
-         * Return the {@link SocketAddress} to which is bound local or
-         * {@code null} if none.
-         * 返回绑定到本地的SocketAddress，没有则返回null
-         */
-        SocketAddress localAddress();
-
-        /**
-         * Return the {@link SocketAddress} to which is bound remote or
-         * {@code null} if none is bound yet.
-         * 返回绑定到远程的SocketAddress，如果还没有绑定，则返回null。
-         */
-        SocketAddress remoteAddress();
-
-        /**
-         * Register the {@link Channel} of the {@link ChannelPromise} and notify
-         * the {@link ChannelFuture} once the registration was complete.
-         * <p>
-         * 注册Channel到多路复用器，并在注册完成后通知ChannelFuture。一旦ChannelPromise成功，就可以在ChannelHandler内向EventLoop提交新任务。 否则，任务可能被拒绝也可能不会被拒绝。
-         */
-        void register(EventLoop eventLoop, ChannelPromise promise);
-
-        /**
          * Bind the {@link SocketAddress} to the {@link Channel} of the {@link ChannelPromise} and notify
          * it once its done.
          * <p>
@@ -334,14 +306,12 @@ public interface Channel extends AttributeMap, ChannelOutboundInvoker, Comparabl
         void connect(SocketAddress remoteAddress, SocketAddress localAddress, ChannelPromise promise);
 
         /**
-         * Disconnect the {@link Channel} of the {@link ChannelFuture} and notify the {@link ChannelPromise} once the
-         * operation was complete.
+         * Register the {@link Channel} of the {@link ChannelPromise} and notify
+         * the {@link ChannelFuture} once the registration was complete.
          * <p>
-         * 断开Channel的连接，一旦完成，通知ChannelFuture
-         * 请求断开与远程通信对端的连接并使用ChannelPromise来获取操作结果的通知消息
-         * 该方法会级联触发CChannelHandler.disconnect(ChannelHandlerContext, ChannelPromise)事件
+         * 注册Channel到多路复用器，并在注册完成后通知ChannelFuture。一旦ChannelPromise成功，就可以在ChannelHandler内向EventLoop提交新任务。 否则，任务可能被拒绝也可能不会被拒绝。
          */
-        void disconnect(ChannelPromise promise);
+        void register(EventLoop eventLoop, ChannelPromise promise);
 
         /**
          * Close the {@link Channel} of the {@link ChannelPromise} and notify the {@link ChannelPromise} once the
@@ -353,21 +323,6 @@ public interface Channel extends AttributeMap, ChannelOutboundInvoker, Comparabl
          * 该操作会级联触发ChannelPipeline中所有ChannelHandler的ChannelHandler.close(ChannelHandlerContext, ChannelPromise)事件
          */
         void close(ChannelPromise promise);
-
-        /**
-         * Closes the {@link Channel} immediately without firing any events.  Probably only useful
-         * when registration attempt failed.
-         * <p>
-         * 强制立即关闭连接
-         */
-        void closeForcibly();
-
-        /**
-         * Deregister the {@link Channel} of the {@link ChannelPromise} from {@link EventLoop} and notify the
-         * {@link ChannelPromise} once the operation was complete.
-         * 注销channel先前分配的EventLoop，完成后通知ChannelFuture
-         */
-        void deregister(ChannelPromise promise);
 
         /**
          * Schedules a read operation that fills the inbound buffer of the first {@link ChannelInboundHandler} in the
@@ -396,6 +351,51 @@ public interface Channel extends AttributeMap, ChannelOutboundInvoker, Comparabl
          * 将之前写入到发送环形数组中的消息全部写入到目标Channel中，发送给通信对方
          */
         void flush();
+
+        /**
+         * Disconnect the {@link Channel} of the {@link ChannelFuture} and notify the {@link ChannelPromise} once the
+         * operation was complete.
+         * <p>
+         * 断开Channel的连接，一旦完成，通知ChannelFuture
+         * 请求断开与远程通信对端的连接并使用ChannelPromise来获取操作结果的通知消息
+         * 该方法会级联触发CChannelHandler.disconnect(ChannelHandlerContext, ChannelPromise)事件
+         */
+        void disconnect(ChannelPromise promise);
+
+        /**
+         * Deregister the {@link Channel} of the {@link ChannelPromise} from {@link EventLoop} and notify the
+         * {@link ChannelPromise} once the operation was complete.
+         * 注销channel先前分配的EventLoop，完成后通知ChannelFuture
+         */
+        void deregister(ChannelPromise promise);
+
+        /**
+         * Return the assigned {@link RecvByteBufAllocator.Handle} which will be used to allocate {@link ByteBuf}'s when
+         * receiving data.
+         */
+        RecvByteBufAllocator.Handle recvBufAllocHandle();
+
+        /**
+         * Return the {@link SocketAddress} to which is bound local or
+         * {@code null} if none.
+         * 返回绑定到本地的SocketAddress，没有则返回null
+         */
+        SocketAddress localAddress();
+
+        /**
+         * Return the {@link SocketAddress} to which is bound remote or
+         * {@code null} if none is bound yet.
+         * 返回绑定到远程的SocketAddress，如果还没有绑定，则返回null。
+         */
+        SocketAddress remoteAddress();
+
+        /**
+         * Closes the {@link Channel} immediately without firing any events.  Probably only useful
+         * when registration attempt failed.
+         * <p>
+         * 强制立即关闭连接
+         */
+        void closeForcibly();
 
         /**
          * Return a special ChannelPromise which can be reused and passed to the operations in {@link Unsafe}.

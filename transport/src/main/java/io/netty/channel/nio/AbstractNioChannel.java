@@ -140,26 +140,6 @@ public abstract class AbstractNioChannel extends AbstractChannel {
             throw new ChannelException("Failed to enter non-blocking mode.", e);
         }
     }
-
-    @Override
-    public boolean isOpen() {
-        return ch.isOpen();
-    }
-
-    @Override
-    public NioUnsafe unsafe() {
-        return (NioUnsafe) super.unsafe();
-    }
-
-    protected SelectableChannel javaChannel() {
-        return ch;
-    }
-
-    @Override
-    public NioEventLoop eventLoop() {
-        return (NioEventLoop) super.eventLoop();
-    }
-
     /**
      * 将当前Channel注册到eventLoop的多路复用器上,仅仅完成注册操作
      *
@@ -234,8 +214,24 @@ public abstract class AbstractNioChannel extends AbstractChannel {
     }
 
 
+    protected SelectableChannel javaChannel() {
+        return ch;
+    }
 
+    @Override
+    public NioEventLoop eventLoop() {
+        return (NioEventLoop) super.eventLoop();
+    }
 
+    @Override
+    public NioUnsafe unsafe() {
+        return (NioUnsafe) super.unsafe();
+    }
+
+    @Override
+    public boolean isOpen() {
+        return ch.isOpen();
+    }
 
     /**
      * Return the current {@link SelectionKey}

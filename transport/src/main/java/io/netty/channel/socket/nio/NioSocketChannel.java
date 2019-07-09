@@ -508,6 +508,11 @@ public class NioSocketChannel extends AbstractNioByteChannel implements io.netty
             calculateMaxBytesPerGatheringWrite();
         }
 
+        private SocketChannel jdkChannel() {
+            return ((NioSocketChannel) channel).javaChannel();
+        }
+
+
         @Override
         protected void autoReadCleared() {
             clearReadPending();
@@ -561,8 +566,6 @@ public class NioSocketChannel extends AbstractNioByteChannel implements io.netty
             }
         }
 
-        private SocketChannel jdkChannel() {
-            return ((NioSocketChannel) channel).javaChannel();
-        }
+
     }
 }

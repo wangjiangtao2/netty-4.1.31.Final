@@ -226,6 +226,124 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
         return new DefaultChannelPipeline(this);
     }
 
+    /******* ChannelOutboundInvoker接口中的方法都交给pipeline对象代理********/
+    @Override
+    public ChannelFuture bind(SocketAddress localAddress) {
+        return pipeline.bind(localAddress);
+    }
+
+    @Override
+    public ChannelFuture bind(SocketAddress localAddress, ChannelPromise promise) {
+        return pipeline.bind(localAddress, promise);
+    }
+
+    @Override
+    public ChannelFuture connect(SocketAddress remoteAddress) {
+        return pipeline.connect(remoteAddress);
+    }
+
+    @Override
+    public ChannelFuture connect(SocketAddress remoteAddress, SocketAddress localAddress) {
+        return pipeline.connect(remoteAddress, localAddress);
+    }
+
+    @Override
+    public ChannelFuture close() {
+        return pipeline.close();
+    }
+
+
+    @Override
+    public ChannelFuture connect(SocketAddress remoteAddress, ChannelPromise promise) {
+        return pipeline.connect(remoteAddress, promise);
+    }
+
+    @Override
+    public ChannelFuture connect(SocketAddress remoteAddress, SocketAddress localAddress, ChannelPromise promise) {
+        return pipeline.connect(remoteAddress, localAddress, promise);
+    }
+
+    @Override
+    public Channel read() {
+        //最后传播到 AbstractChannel 的 beginRead 方法  p856
+        pipeline.read();
+        return this;
+    }
+
+    @Override
+    public ChannelFuture write(Object msg) {
+        return pipeline.write(msg);
+    }
+
+    @Override
+    public ChannelFuture write(Object msg, ChannelPromise promise) {
+        return pipeline.write(msg, promise);
+    }
+
+    @Override
+    public ChannelFuture writeAndFlush(Object msg) {
+        return pipeline.writeAndFlush(msg);
+    }
+
+    @Override
+    public ChannelFuture writeAndFlush(Object msg, ChannelPromise promise) {
+        return pipeline.writeAndFlush(msg, promise);
+    }
+
+    @Override
+    public Channel flush() {
+        pipeline.flush();
+        return this;
+    }
+
+
+    @Override
+    public ChannelFuture deregister() {
+        return pipeline.deregister();
+    }
+
+    @Override
+    public ChannelFuture deregister(ChannelPromise promise) {
+        return pipeline.deregister(promise);
+    }
+
+
+    @Override
+    public ChannelFuture disconnect() {
+        return pipeline.disconnect();
+    }
+    @Override
+    public ChannelFuture disconnect(ChannelPromise promise) {
+        return pipeline.disconnect(promise);
+    }
+
+    @Override
+    public ChannelFuture close(ChannelPromise promise) {
+        return pipeline.close(promise);
+    }
+
+    @Override
+    public ChannelPromise newPromise() {
+        return pipeline.newPromise();
+    }
+
+    @Override
+    public ChannelProgressivePromise newProgressivePromise() {
+        return pipeline.newProgressivePromise();
+    }
+
+    @Override
+    public ChannelFuture newSucceededFuture() {
+        return pipeline.newSucceededFuture();
+    }
+
+    @Override
+    public ChannelFuture newFailedFuture(Throwable cause) {
+        return pipeline.newFailedFuture(cause);
+    }
+
+
+
     /**
      * 通道是否可写
      */
@@ -324,119 +442,7 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
 
 
 
-    /******* ChannelOutboundInvoker接口中的方法都交给pipeline对象代理********/
-    @Override
-    public ChannelFuture bind(SocketAddress localAddress) {
-        return pipeline.bind(localAddress);
-    }
 
-    @Override
-    public ChannelFuture connect(SocketAddress remoteAddress) {
-        return pipeline.connect(remoteAddress);
-    }
-
-    @Override
-    public ChannelFuture connect(SocketAddress remoteAddress, SocketAddress localAddress) {
-        return pipeline.connect(remoteAddress, localAddress);
-    }
-
-    @Override
-    public ChannelFuture disconnect() {
-        return pipeline.disconnect();
-    }
-
-    @Override
-    public ChannelFuture close() {
-        return pipeline.close();
-    }
-
-    @Override
-    public ChannelFuture deregister() {
-        return pipeline.deregister();
-    }
-
-    @Override
-    public Channel flush() {
-        pipeline.flush();
-        return this;
-    }
-
-    @Override
-    public ChannelFuture bind(SocketAddress localAddress, ChannelPromise promise) {
-        return pipeline.bind(localAddress, promise);
-    }
-
-    @Override
-    public ChannelFuture connect(SocketAddress remoteAddress, ChannelPromise promise) {
-        return pipeline.connect(remoteAddress, promise);
-    }
-
-    @Override
-    public ChannelFuture connect(SocketAddress remoteAddress, SocketAddress localAddress, ChannelPromise promise) {
-        return pipeline.connect(remoteAddress, localAddress, promise);
-    }
-
-    @Override
-    public ChannelFuture disconnect(ChannelPromise promise) {
-        return pipeline.disconnect(promise);
-    }
-
-    @Override
-    public ChannelFuture close(ChannelPromise promise) {
-        return pipeline.close(promise);
-    }
-
-    @Override
-    public ChannelFuture deregister(ChannelPromise promise) {
-        return pipeline.deregister(promise);
-    }
-
-    @Override
-    public Channel read() {
-        //最后传播到 AbstractChannel 的 beginRead 方法  p856
-        pipeline.read();
-        return this;
-    }
-
-    @Override
-    public ChannelFuture write(Object msg) {
-        return pipeline.write(msg);
-    }
-
-    @Override
-    public ChannelFuture write(Object msg, ChannelPromise promise) {
-        return pipeline.write(msg, promise);
-    }
-
-    @Override
-    public ChannelFuture writeAndFlush(Object msg) {
-        return pipeline.writeAndFlush(msg);
-    }
-
-    @Override
-    public ChannelFuture writeAndFlush(Object msg, ChannelPromise promise) {
-        return pipeline.writeAndFlush(msg, promise);
-    }
-
-    @Override
-    public ChannelPromise newPromise() {
-        return pipeline.newPromise();
-    }
-
-    @Override
-    public ChannelProgressivePromise newProgressivePromise() {
-        return pipeline.newProgressivePromise();
-    }
-
-    @Override
-    public ChannelFuture newSucceededFuture() {
-        return pipeline.newSucceededFuture();
-    }
-
-    @Override
-    public ChannelFuture newFailedFuture(Throwable cause) {
-        return pipeline.newFailedFuture(cause);
-    }
 
     /**
      * 返回ChannelFuture
@@ -700,33 +706,6 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
          */
         private boolean neverRegistered = true;
 
-        private void assertEventLoop() {
-            assert !registered || eventLoop.inEventLoop();
-        }
-
-        @Override
-        public RecvByteBufAllocator.Handle recvBufAllocHandle() {
-            if (recvHandle == null) {
-                recvHandle = config().getRecvByteBufAllocator().newHandle();
-            }
-            return recvHandle;
-        }
-
-        @Override
-        public final ChannelOutboundBuffer outboundBuffer() {
-            return outboundBuffer;
-        }
-
-        @Override
-        public final SocketAddress localAddress() {
-            return localAddress0();
-        }
-
-        @Override
-        public final SocketAddress remoteAddress() {
-            return remoteAddress0();
-        }
-
         /**
          * 将当前Unsafe对应的Channel注册到EventLoop的多路复用器上，然后调用DefaultChannelPipeline的fireChannelRegistered方法
          * 如果Channel被激活，则调用DefaultChannelPipeline的fireChannelActive方法
@@ -881,106 +860,6 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
             safeSetSuccess(promise);
         }
 
-        /**
-         * 用户客户端或者服务端主动关闭连接
-         */
-        @Override
-        public final void disconnect(final ChannelPromise promise) {
-            assertEventLoop();
-
-            if (!promise.setUncancellable()) {
-                return;
-            }
-
-            boolean wasActive = isActive();
-            try {
-                /**
-                 * 客户端 {@link io.netty.channel.socket.nio.NioSocketChannel#doDisconnect()}
-                 * 如果服务端调用此方法会抛出异常， {@link NioServerSocketChannel#doDisconnect()}
-                 */
-                doDisconnect();
-            } catch (Throwable t) {
-                safeSetFailure(promise, t);
-                closeIfClosed();
-                return;
-            }
-            //断开成功，产生Inactive事件
-            if (wasActive && !isActive()) {
-                invokeLater(new Runnable() {
-                    @Override
-                    public void run() {
-                        pipeline.fireChannelInactive();
-                    }
-                });
-            }
-
-            safeSetSuccess(promise);
-            closeIfClosed(); // doDisconnect() might have closed the channel
-        }
-
-        /**
-         * 在链路关闭之前需要首先判断是否处于刷新状态，如果处于刷新状态说明还有消息尚未发送出去，需要等到所有消息发送完成再关闭链路，因此，将关闭操作封装成Runnable稍后再执行
-         *
-         * @param promise
-         */
-        @Override
-        public final void close(final ChannelPromise promise) {
-            assertEventLoop();
-
-            close(promise, CLOSE_CLOSED_CHANNEL_EXCEPTION, CLOSE_CLOSED_CHANNEL_EXCEPTION, false);
-        }
-
-        @Override
-        public final void deregister(final ChannelPromise promise) {
-            assertEventLoop();
-
-            deregister(promise, false);
-        }
-
-        private void deregister(final ChannelPromise promise, final boolean fireChannelInactive) {
-            if (!promise.setUncancellable()) {
-                return;
-            }
-
-            if (!registered) {
-                safeSetSuccess(promise);
-                return;
-            }
-
-            // As a user may call deregister() from within any method while doing processing in the ChannelPipeline,
-            // we need to ensure we do the actual deregister operation later. This is needed as for example,
-            // we may be in the ByteToMessageDecoder.callDecode(...) method and so still try to do processing in
-            // the old EventLoop while the user already registered the Channel to a new EventLoop. Without delay,
-            // the deregister operation this could lead to have a handler invoked by different EventLoop and so
-            // threads.
-            //
-            // See:
-            // https://github.com/netty/netty/issues/4435
-            invokeLater(new Runnable() {
-                @Override
-                public void run() {
-                    try {
-                        doDeregister();
-                    } catch (Throwable t) {
-                        logger.warn("Unexpected exception occurred while deregistering a channel.", t);
-                    } finally {
-                        if (fireChannelInactive) {
-                            pipeline.fireChannelInactive();
-                        }
-                        // Some transports like local and AIO does not allow the deregistration of
-                        // an open channel.  Their doDeregister() calls close(). Consequently,
-                        // close() calls deregister() again - no need to fire channelUnregistered, so check
-                        // if it was registered.
-                        if (registered) {
-                            registered = false;
-                            pipeline.fireChannelUnregistered();
-                        }
-                        safeSetSuccess(promise);
-                    }
-                }
-            });
-        }
-
         @Override
         public final void beginRead() {
             assertEventLoop();
@@ -1108,6 +987,138 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
             } finally {
                 inFlush0 = false;
             }
+        }
+
+
+        /**
+         * 用户客户端或者服务端主动关闭连接
+         */
+        @Override
+        public final void disconnect(final ChannelPromise promise) {
+            assertEventLoop();
+
+            if (!promise.setUncancellable()) {
+                return;
+            }
+
+            boolean wasActive = isActive();
+            try {
+                /**
+                 * 客户端 {@link io.netty.channel.socket.nio.NioSocketChannel#doDisconnect()}
+                 * 如果服务端调用此方法会抛出异常， {@link NioServerSocketChannel#doDisconnect()}
+                 */
+                doDisconnect();
+            } catch (Throwable t) {
+                safeSetFailure(promise, t);
+                closeIfClosed();
+                return;
+            }
+            //断开成功，产生Inactive事件
+            if (wasActive && !isActive()) {
+                invokeLater(new Runnable() {
+                    @Override
+                    public void run() {
+                        pipeline.fireChannelInactive();
+                    }
+                });
+            }
+
+            safeSetSuccess(promise);
+            closeIfClosed(); // doDisconnect() might have closed the channel
+        }
+
+        /**
+         * 在链路关闭之前需要首先判断是否处于刷新状态，如果处于刷新状态说明还有消息尚未发送出去，需要等到所有消息发送完成再关闭链路，因此，将关闭操作封装成Runnable稍后再执行
+         *
+         * @param promise
+         */
+        @Override
+        public final void close(final ChannelPromise promise) {
+            assertEventLoop();
+
+            close(promise, CLOSE_CLOSED_CHANNEL_EXCEPTION, CLOSE_CLOSED_CHANNEL_EXCEPTION, false);
+        }
+
+        @Override
+        public final void deregister(final ChannelPromise promise) {
+            assertEventLoop();
+
+            deregister(promise, false);
+        }
+
+        private void deregister(final ChannelPromise promise, final boolean fireChannelInactive) {
+            if (!promise.setUncancellable()) {
+                return;
+            }
+
+            if (!registered) {
+                safeSetSuccess(promise);
+                return;
+            }
+
+            // As a user may call deregister() from within any method while doing processing in the ChannelPipeline,
+            // we need to ensure we do the actual deregister operation later. This is needed as for example,
+            // we may be in the ByteToMessageDecoder.callDecode(...) method and so still try to do processing in
+            // the old EventLoop while the user already registered the Channel to a new EventLoop. Without delay,
+            // the deregister operation this could lead to have a handler invoked by different EventLoop and so
+            // threads.
+            //
+            // See:
+            // https://github.com/netty/netty/issues/4435
+            invokeLater(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        doDeregister();
+                    } catch (Throwable t) {
+                        logger.warn("Unexpected exception occurred while deregistering a channel.", t);
+                    } finally {
+                        if (fireChannelInactive) {
+                            pipeline.fireChannelInactive();
+                        }
+                        // Some transports like local and AIO does not allow the deregistration of
+                        // an open channel.  Their doDeregister() calls close(). Consequently,
+                        // close() calls deregister() again - no need to fire channelUnregistered, so check
+                        // if it was registered.
+                        if (registered) {
+                            registered = false;
+                            pipeline.fireChannelUnregistered();
+                        }
+                        safeSetSuccess(promise);
+                    }
+                }
+            });
+        }
+
+
+
+
+
+        private void assertEventLoop() {
+            assert !registered || eventLoop.inEventLoop();
+        }
+
+        @Override
+        public RecvByteBufAllocator.Handle recvBufAllocHandle() {
+            if (recvHandle == null) {
+                recvHandle = config().getRecvByteBufAllocator().newHandle();
+            }
+            return recvHandle;
+        }
+
+        @Override
+        public final ChannelOutboundBuffer outboundBuffer() {
+            return outboundBuffer;
+        }
+
+        @Override
+        public final SocketAddress localAddress() {
+            return localAddress0();
+        }
+
+        @Override
+        public final SocketAddress remoteAddress() {
+            return remoteAddress0();
         }
 
 

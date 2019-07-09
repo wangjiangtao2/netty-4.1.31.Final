@@ -80,19 +80,6 @@ public abstract class AbstractNioByteChannel extends AbstractNioChannel {
      */
     protected abstract ChannelFuture shutdownInput();
 
-    protected boolean isInputShutdown0() {
-        return false;
-    }
-
-    @Override
-    protected AbstractNioUnsafe newUnsafe() {
-        return new NioByteUnsafe();
-    }
-
-    @Override
-    public ChannelMetadata metadata() {
-        return METADATA;
-    }
     /**
      * Write objects to the OS.
      * @param in the collection which contains objects to write.
@@ -185,6 +172,32 @@ public abstract class AbstractNioByteChannel extends AbstractNioChannel {
         incompleteWrite(writeSpinCount < 0);
     }
 
+
+
+
+
+
+
+
+
+
+
+
+    protected boolean isInputShutdown0() {
+        return false;
+    }
+
+    @Override
+    protected AbstractNioUnsafe newUnsafe() {
+        return new NioByteUnsafe();
+    }
+
+    @Override
+    public ChannelMetadata metadata() {
+        return METADATA;
+    }
+
+
     /**
      * Read bytes into the given {@link ByteBuf} and return the amount.
      */
@@ -196,6 +209,7 @@ public abstract class AbstractNioByteChannel extends AbstractNioChannel {
      * @return amount       the amount of written bytes
      */
     protected abstract int doWriteBytes(ByteBuf buf) throws Exception;
+
 
     protected class NioByteUnsafe extends AbstractNioUnsafe {
 
