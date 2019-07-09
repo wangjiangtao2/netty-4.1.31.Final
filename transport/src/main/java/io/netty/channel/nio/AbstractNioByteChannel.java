@@ -29,6 +29,7 @@ import io.netty.channel.internal.ChannelUtils;
 import io.netty.channel.socket.ChannelInputShutdownEvent;
 import io.netty.channel.socket.ChannelInputShutdownReadComplete;
 import io.netty.channel.socket.SocketChannelConfig;
+import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.util.internal.StringUtil;
 
 import java.io.IOException;
@@ -44,6 +45,7 @@ import static io.netty.channel.internal.ChannelUtils.WRITE_STATUS_SNDBUF_FULL;
 public abstract class AbstractNioByteChannel extends AbstractNioChannel {
 
     private static final ChannelMetadata METADATA = new ChannelMetadata(false, 16);
+
     private static final String EXPECTED_TYPES =
             " (expected: " + StringUtil.simpleClassName(ByteBuf.class) + ", " +
             StringUtil.simpleClassName(FileRegion.class) + ')';
@@ -59,6 +61,7 @@ public abstract class AbstractNioByteChannel extends AbstractNioChannel {
             ((AbstractNioUnsafe) unsafe()).flush0();
         }
     };
+
     private boolean inputClosedSeenErrorOnRead;
 
     /**
@@ -89,111 +92,6 @@ public abstract class AbstractNioByteChannel extends AbstractNioChannel {
     public ChannelMetadata metadata() {
         return METADATA;
     }
-
-    final boolean shouldBreakReadReady(ChannelConfig config) {
-        return isInputShutdown0() && (inputClosedSeenErrorOnRead || !isAllowHalfClosure(config));
-    }
-
-    private static boolean isAllowHalfClosure(ChannelConfig config) {
-        return config instanceof SocketChannelConfig &&
-                ((SocketChannelConfig) config).isAllowHalfClosure();
-    }
-
-    protected class NioByteUnsafe extends AbstractNioUnsafe {
-
-        private void closeOnRead(ChannelPipeline pipeline) {
-            if (!isInputShutdown0()) {
-                if (isAllowHalfClosure(config())) {
-                    shutdownInput();
-                    pipeline.fireUserEventTriggered(ChannelInputShutdownEvent.INSTANCE);
-                } else {
-                    close(voidPromise());
-                }
-            } else {
-                inputClosedSeenErrorOnRead = true;
-                pipeline.fireUserEventTriggered(ChannelInputShutdownReadComplete.INSTANCE);
-            }
-        }
-
-        private void handleReadException(ChannelPipeline pipeline, ByteBuf byteBuf, Throwable cause, boolean close,
-                RecvByteBufAllocator.Handle allocHandle) {
-            if (byteBuf != null) {
-                if (byteBuf.isReadable()) {
-                    readPending = false;
-                    pipeline.fireChannelRead(byteBuf);
-                } else {
-                    byteBuf.release();
-                }
-            }
-            allocHandle.readComplete();
-            pipeline.fireChannelReadComplete();
-            pipeline.fireExceptionCaught(cause);
-            if (close || cause instanceof IOException) {
-                closeOnRead(pipeline);
-            }
-        }
-
-        /**
-         * 首先获取NioSocketChannel的SocketChannelConfig，主要用于设置客户端连接的TCP参数
-         */
-        @Override
-        public final void read() {
-            final ChannelConfig config = config();
-            if (shouldBreakReadReady(config)) {
-                clearReadPending();
-                return;
-            }
-            final ChannelPipeline pipeline = pipeline();
-            final ByteBufAllocator allocator = config.getAllocator();
-            final RecvByteBufAllocator.Handle allocHandle = recvBufAllocHandle();
-            allocHandle.reset(config);
-
-            ByteBuf byteBuf = null;
-            boolean close = false;
-            try {
-                do {
-                    byteBuf = allocHandle.allocate(allocator);
-                    allocHandle.lastBytesRead(doReadBytes(byteBuf));
-                    if (allocHandle.lastBytesRead() <= 0) {
-                        // nothing was read. release the buffer.
-                        byteBuf.release();
-                        byteBuf = null;
-                        close = allocHandle.lastBytesRead() < 0;
-                        if (close) {
-                            // There is nothing left to read as we received an EOF.
-                            readPending = false;
-                        }
-                        break;
-                    }
-
-                    allocHandle.incMessagesRead(1);
-                    readPending = false;
-                    pipeline.fireChannelRead(byteBuf);
-                    byteBuf = null;
-                } while (allocHandle.continueReading());
-
-                allocHandle.readComplete();
-                pipeline.fireChannelReadComplete();
-
-                if (close) {
-                    closeOnRead(pipeline);
-                }
-            } catch (Throwable t) {
-                handleReadException(pipeline, byteBuf, t, close, allocHandle);
-            } finally {
-                // Check if there is a readPending which was not processed yet.
-                // This could be for two reasons:
-                // * The user called Channel.read() or ChannelHandlerContext.read() in channelRead(...) method
-                // * The user called Channel.read() or ChannelHandlerContext.read() in channelReadComplete(...) method
-                //
-                // See https://github.com/netty/netty/issues/2254
-                if (!readPending && !config.isAutoRead()) {
-                    removeReadOp();
-                }
-            }
-        }
-    }
-
     /**
      * Write objects to the OS.
      * @param in the collection which contains objects to write.
@@ -262,7 +160,7 @@ public abstract class AbstractNioByteChannel extends AbstractNioChannel {
 
     /**
      *
-     *
+     * 对于NioSocketChannel ，此方法会被重写
      */
     @Override
     protected void doWrite(ChannelOutboundBuffer in) throws Exception {
@@ -284,6 +182,126 @@ public abstract class AbstractNioByteChannel extends AbstractNioChannel {
         } while (writeSpinCount > 0);
 
         incompleteWrite(writeSpinCount < 0);
+    }
+
+    /**
+     * Read bytes into the given {@link ByteBuf} and return the amount.
+     */
+    protected abstract int doReadBytes(ByteBuf buf) throws Exception;
+
+    /**
+     * Write bytes form the given {@link ByteBuf} to the underlying {@link java.nio.channels.Channel}.
+     * @param buf           the {@link ByteBuf} from which the bytes should be written
+     * @return amount       the amount of written bytes
+     */
+    protected abstract int doWriteBytes(ByteBuf buf) throws Exception;
+
+    protected class NioByteUnsafe extends AbstractNioUnsafe {
+
+        private void closeOnRead(ChannelPipeline pipeline) {
+            if (!isInputShutdown0()) {
+                if (isAllowHalfClosure(config())) {
+                    shutdownInput();
+                    pipeline.fireUserEventTriggered(ChannelInputShutdownEvent.INSTANCE);
+                } else {
+                    close(voidPromise());
+                }
+            } else {
+                inputClosedSeenErrorOnRead = true;
+                pipeline.fireUserEventTriggered(ChannelInputShutdownReadComplete.INSTANCE);
+            }
+        }
+
+        private void handleReadException(ChannelPipeline pipeline, ByteBuf byteBuf, Throwable cause, boolean close,
+                                         RecvByteBufAllocator.Handle allocHandle) {
+            if (byteBuf != null) {
+                if (byteBuf.isReadable()) {
+                    readPending = false;
+                    pipeline.fireChannelRead(byteBuf);
+                } else {
+                    byteBuf.release();
+                }
+            }
+            allocHandle.readComplete();
+            pipeline.fireChannelReadComplete();
+            pipeline.fireExceptionCaught(cause);
+            if (close || cause instanceof IOException) {
+                closeOnRead(pipeline);
+            }
+        }
+
+        /**
+         * 首先获取NioSocketChannel的SocketChannelConfig，主要用于设置客户端连接的TCP参数
+         */
+        @Override
+        public final void read() {
+            /**
+             *  {@link NioSocketChannel#config}
+             */
+            final ChannelConfig config = config();
+            if (shouldBreakReadReady(config)) {
+                clearReadPending();
+                return;
+            }
+            final ChannelPipeline pipeline = pipeline();
+            final ByteBufAllocator allocator = config.getAllocator();
+            final RecvByteBufAllocator.Handle allocHandle = recvBufAllocHandle();
+            allocHandle.reset(config);
+
+            ByteBuf byteBuf = null;
+            boolean close = false;
+            try {
+                do {
+                    byteBuf = allocHandle.allocate(allocator);
+                    allocHandle.lastBytesRead(doReadBytes(byteBuf));
+                    if (allocHandle.lastBytesRead() <= 0) {
+                        // nothing was read. release the buffer.
+                        byteBuf.release();
+                        byteBuf = null;
+                        close = allocHandle.lastBytesRead() < 0;
+                        if (close) {
+                            // There is nothing left to read as we received an EOF.
+                            readPending = false;
+                        }
+                        break;
+                    }
+
+                    allocHandle.incMessagesRead(1);
+                    readPending = false;
+                    pipeline.fireChannelRead(byteBuf);
+                    byteBuf = null;
+                } while (allocHandle.continueReading());
+
+                allocHandle.readComplete();
+                pipeline.fireChannelReadComplete();
+
+                if (close) {
+                    closeOnRead(pipeline);
+                }
+            } catch (Throwable t) {
+                handleReadException(pipeline, byteBuf, t, close, allocHandle);
+            } finally {
+                // Check if there is a readPending which was not processed yet.
+                // This could be for two reasons:
+                // * The user called Channel.read() or ChannelHandlerContext.read() in channelRead(...) method
+                // * The user called Channel.read() or ChannelHandlerContext.read() in channelReadComplete(...) method
+                //
+                // See https://github.com/netty/netty/issues/2254
+                if (!readPending && !config.isAutoRead()) {
+                    removeReadOp();
+                }
+            }
+        }
+    }
+
+
+    final boolean shouldBreakReadReady(ChannelConfig config) {
+        return isInputShutdown0() && (inputClosedSeenErrorOnRead || !isAllowHalfClosure(config));
+    }
+
+    private static boolean isAllowHalfClosure(ChannelConfig config) {
+        return config instanceof SocketChannelConfig &&
+                ((SocketChannelConfig) config).isAllowHalfClosure();
     }
 
     @Override
@@ -329,17 +347,6 @@ public abstract class AbstractNioByteChannel extends AbstractNioChannel {
      */
     protected abstract long doWriteFileRegion(FileRegion region) throws Exception;
 
-    /**
-     * Read bytes into the given {@link ByteBuf} and return the amount.
-     */
-    protected abstract int doReadBytes(ByteBuf buf) throws Exception;
-
-    /**
-     * Write bytes form the given {@link ByteBuf} to the underlying {@link java.nio.channels.Channel}.
-     * @param buf           the {@link ByteBuf} from which the bytes should be written
-     * @return amount       the amount of written bytes
-     */
-    protected abstract int doWriteBytes(ByteBuf buf) throws Exception;
 
     protected final void setOpWrite() {
         final SelectionKey key = selectionKey();
