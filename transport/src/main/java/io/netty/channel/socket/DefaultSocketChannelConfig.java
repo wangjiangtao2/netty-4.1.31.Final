@@ -34,7 +34,7 @@ import static io.netty.channel.ChannelOption.*;
  * The default {@link SocketChannelConfig} implementation.
  */
 public class DefaultSocketChannelConfig extends DefaultChannelConfig
-                                        implements SocketChannelConfig {
+        implements SocketChannelConfig {
 
     protected final Socket javaSocket;
     private volatile boolean allowHalfClosure;
@@ -43,15 +43,20 @@ public class DefaultSocketChannelConfig extends DefaultChannelConfig
      * Creates a new instance.
      */
     public DefaultSocketChannelConfig(SocketChannel channel, Socket javaSocket) {
+        // 调用父类构造器，绑定socketchannel
         super(channel);
         if (javaSocket == null) {
             throw new NullPointerException("javaSocket");
         }
+        // 绑定java socket
         this.javaSocket = javaSocket;
 
         // Enable TCP_NODELAY by default if possible.
+        //netty一般运行在服务器上，不在Android上，canEnableTcpNoDelayByDefault返回true
         if (PlatformDependent.canEnableTcpNoDelayByDefault()) {
             try {
+                // 开启 TCP_NODELAY ，开启TCP的nagle算法
+                // 尽量不要等待，只要发送缓冲区中有数据，并且发送窗口是打开的，就尽量把数据发送到网络上去。
                 setTcpNoDelay(true);
             } catch (Exception e) {
                 // Ignore.
@@ -313,7 +318,7 @@ public class DefaultSocketChannelConfig extends DefaultChannelConfig
 
     @Override
     public SocketChannelConfig setAutoRead(boolean autoRead) {
-         super.setAutoRead(autoRead);
+        super.setAutoRead(autoRead);
         return this;
     }
 

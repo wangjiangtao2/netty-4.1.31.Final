@@ -104,13 +104,25 @@ public abstract class AbstractNioChannel extends AbstractChannel {
      * @param parent         the parent {@link Channel} by which this instance was created. May be {@code null}
      * @param ch             the underlying {@link SelectableChannel} on which it operates
      * @param readInterestOp the ops to set to receive data from the {@link SelectableChannel}
+     *
+     * parent
+     *   服务端  为空
+     *   客户端  为创建他的服务端channel
+     * ch
+     *   服务端  ServerSocketChannel
+     *   客户端  SocketChannel
+     * readInterestOp
+     *    客户端传 SelectionKey.OP_READ
+     *      {@link AbstractNioByteChannel#AbstractNioByteChannel(io.netty.channel.Channel, java.nio.channels.SelectableChannel)}
+     *    服务端传 SelectionKey.OP_ACCEPT
+     *      {@link io.netty.channel.socket.nio.NioServerSocketChannel#NioServerSocketChannel(java.nio.channels.ServerSocketChannel)}
      */
     protected AbstractNioChannel(Channel parent, SelectableChannel ch, int readInterestOp) {
         // 调用 AbstractChannel 构造器
         super(parent);
         // 保存jdk底层 ServerSocketChannel/SocketChannel
         this.ch = ch;
-        // 从上一步过来 服务端:SelectionKey.OP_ACCEPT  SelectionKey.OP_READ
+        // 设置兴趣集 服务端:SelectionKey.OP_ACCEPT  SelectionKey.OP_READ
         this.readInterestOp = readInterestOp;
         try {
             //设置非阻塞模式
