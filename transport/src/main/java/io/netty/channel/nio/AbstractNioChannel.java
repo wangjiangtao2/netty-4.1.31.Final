@@ -164,7 +164,7 @@ public abstract class AbstractNioChannel extends AbstractChannel {
      * 将当前Channel注册到eventLoop的多路复用器上,仅仅完成注册操作
      *
      * 如果当前注册返回的selectionKey已经被取消，则抛出CancelledKeyException异常，捕获该异常进行处理。
-     * 如果是第一次处理该异常，调用多路复用器的selectNow方法将已经取消的selectionKey从多路复用器中删除屌。操作成功后，将selected置为true，说明之前失效的selectionKey已经被删除掉，
+     * 如果是第一次处理该异常，调用多路复用器的selectNow方法将已经取消的selectionKey从多路复用器中删除掉。操作成功后，将selected置为true，说明之前失效的selectionKey已经被删除掉，
      *  继续发起下一次注册操作，如果成功则退出，
      *  如果仍然发生CancelledKeyException异常，说明我们无法删除已经被取消的selectionKey，按照JDK的API说明，这种意外不应该发生，若发生说明NIO的相关类库存在不可恢复的BUG。
      */
@@ -218,17 +218,17 @@ public abstract class AbstractNioChannel extends AbstractChannel {
         readPending = true;
 
         /**
-         *前面讲到channel在注册的时候，这是 interestOps 设置的是 0
+         * channel在注册的时候， interestOps 设置的是 0 {@link io.netty.channel.nio.AbstractNioChannel#doRegister()}
          *
          * 当前的操作位与读操作位按位与操作，如果等于0，说明目前并没有设置读操作位，通过interestOps | readInterestOp 设置读操作位，
          * 最后调用interestOps方法重新设置通道的网络操作位这样就可以监听网络的读事件了
          *
          */
         final int interestOps = selectionKey.interestOps();
-        // readInterestOp 在前面讲到channel创建的时候，设置值为 SelectionKey.OP_ACCEPT
+        // readInterestOp 在前面讲到channel创建的时候，设置值为 SelectionKey.OP_ACCEPT | SelectionKey.OP_READ
         if ((interestOps & readInterestOp) == 0) {
-            // 最终 selectionKey 的兴趣集就会设置为 SelectionKey.OP_ACCEPT
-            // 表示随时可以接收新连接的接入
+            // 最终 selectionKey 的兴趣集就会设置为 SelectionKey.OP_ACCEPT |  SelectionKey.OP_READ
+            // 表示随时可以接收新连接的接入|读取数据
             selectionKey.interestOps(interestOps | readInterestOp);
         }
     }

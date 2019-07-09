@@ -17,6 +17,7 @@ package io.netty.channel;
 
 import io.netty.buffer.ByteBufAllocator;
 import io.netty.channel.nio.AbstractNioByteChannel;
+import io.netty.channel.nio.AbstractNioMessageChannel;
 import io.netty.channel.socket.ChannelOutputShutdownEvent;
 import io.netty.channel.socket.ChannelOutputShutdownException;
 import io.netty.util.DefaultAttributeMap;
@@ -68,13 +69,13 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
     /**
      * Unsafe对象，封装ByteBuf的读写过程
      *
-     * @see io.netty.channel.nio.AbstractNioMessageChannel.NioMessageUnsafe   服务端
-     * @see AbstractNioByteChannel.NioByteUnsafe    客户端
+     * 服务端  {@link AbstractNioMessageChannel.NioMessageUnsafe}
+     * 客户端 {@link AbstractNioByteChannel.NioByteUnsafe}
      */
     private final Unsafe unsafe;
+
     /**
      * 当前Channel对应的pipeline,保存 ChannelHandler 的 List，用于处理或拦截 Channel 的入站事件和出站操作
-     *
      * @see DefaultChannelPipeline
      * @see ChannelPipeline
      */
@@ -434,7 +435,6 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
         return pipeline.newFailedFuture(cause);
     }
 
-/********************ChannelOutboundInvoker接口*************/
     /**
      * 返回ChannelFuture
      */
