@@ -17,9 +17,12 @@ package io.netty.channel;
 
 import io.netty.buffer.ByteBufAllocator;
 import io.netty.channel.nio.AbstractNioByteChannel;
+import io.netty.channel.nio.AbstractNioChannel;
 import io.netty.channel.nio.AbstractNioMessageChannel;
 import io.netty.channel.socket.ChannelOutputShutdownEvent;
 import io.netty.channel.socket.ChannelOutputShutdownException;
+import io.netty.channel.socket.nio.NioServerSocketChannel;
+import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.util.DefaultAttributeMap;
 import io.netty.util.ReferenceCountUtil;
 import io.netty.util.internal.PlatformDependent;
@@ -449,690 +452,6 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
     }
 
 
-
-    /**
-     * {@link Unsafe} implementation which sub-classes must extend and use.
-     * Unsafe的抽象实现，虽然是抽象类，但没有抽象的方法，只是对某些方法提供了空实现；一些方法的关键实现是交给AbstractChannel的特定子类实现
-     */
-    protected abstract class AbstractUnsafe implements Unsafe {
-        /**
-         * ChannelOutboundBuffer实质上是无界的单向链表
-         *  Netty 向站外输出数据的过程统一通过 ChannelOutboundBuffer 类进行封装，目的是为了提高网络的吞吐量，
-         *  在外面调用 write 的时候，数据并没有写到 Socket，而是写到了 ChannelOutboundBuffer 这里，当调用 flush 的时候，才真正的向 Socket 写出。
-         */
-        private volatile ChannelOutboundBuffer outboundBuffer = new ChannelOutboundBuffer(AbstractChannel.this);
-        private RecvByteBufAllocator.Handle recvHandle;
-        private boolean inFlush0;
-        /**
-         * true if the channel has never been registered, false otherwise
-         */
-        private boolean neverRegistered = true;
-
-        private void assertEventLoop() {
-            assert !registered || eventLoop.inEventLoop();
-        }
-
-        @Override
-        public RecvByteBufAllocator.Handle recvBufAllocHandle() {
-            if (recvHandle == null) {
-                recvHandle = config().getRecvByteBufAllocator().newHandle();
-            }
-            return recvHandle;
-        }
-
-        @Override
-        public final ChannelOutboundBuffer outboundBuffer() {
-            return outboundBuffer;
-        }
-
-        @Override
-        public final SocketAddress localAddress() {
-            return localAddress0();
-        }
-
-        @Override
-        public final SocketAddress remoteAddress() {
-            return remoteAddress0();
-        }
-
-        /**
-         * 将当前Unsafe对应的Channel注册到EventLoop的多路复用器上，然后调用DefaultChannelPipeline的fireChannelRegistered方法
-         * 如果Channel被激活，则调用DefaultChannelPipeline的fireChannelActive方法
-         */
-        @Override
-        public final void register(EventLoop eventLoop, final ChannelPromise promise) {
-            if (eventLoop == null) {
-                throw new NullPointerException("eventLoop");
-            }
-            if (isRegistered()) {
-                promise.setFailure(new IllegalStateException("registered to an event loop already"));
-                return;
-            }
-            if (!isCompatible(eventLoop)) {
-                promise.setFailure(
-                        new IllegalStateException("incompatible event loop type: " + eventLoop.getClass().getName()));
-                return;
-            }
-
-            // 将该Channel与eventLoop 进行绑定(保存起来)，后续与该channel相关的IO操作都由eventLoop来处理,从parentGroup(NioEventLoopGroup)分配到的NioEventLoop线程
-            AbstractChannel.this.eventLoop = eventLoop;
-            /**
-             * 判断当前线程是否是Channel对应的NioEventLoop线程，如果是同一个线程，则不存在多线程并发操作问题，直接调用register0进行注册；
-             * 如果是由用户线程或者其他线程发起的注册操作，则将注册操作封装成Runnable，放到NioEventLoop任务队列中执行。
-             *
-             * 初次注册时 eventLoop.inEventLoop() 返回false
-             */
-            if (eventLoop.inEventLoop()) {
-                register0(promise);
-            } else {
-                try {
-                    eventLoop.execute(new Runnable() {
-                        @Override
-                        public void run() {
-                            // 调用实际的注册接口register0
-                            // 执行 SingleThreadEventExecutor 的execute线程
-                            register0(promise);
-                        }
-                    });
-                } catch (Throwable t) {
-                    logger.warn(
-                            "Force-closing a channel whose registration task was not accepted by an event loop: {}",
-                            AbstractChannel.this, t);
-                    closeForcibly();
-                    closeFuture.setClosed();
-                    safeSetFailure(promise, t);
-                }
-            }
-        }
-
-        private void register0(ChannelPromise promise) {
-            try {
-                // check if the channel is still open as it could be closed in the mean time when the register
-                // call was outside of the eventLoop
-                //判断当前Channel是否打开
-                if (!promise.setUncancellable() || !ensureOpen(promise)) {
-                    return;
-                }
-                boolean firstRegistration = neverRegistered;
-                /** 由AbstractNioChannel类的 内部类AbstractNioUnsafe 实现
-                 * @see  AbstractNioChannel#doRegister()
-                 * */
-                doRegister();
-                //修改注册状态
-                neverRegistered = false;
-                registered = true;
-
-                // Ensure we call handlerAdded(...) before we actually notify the promise. This is needed as the
-                // user may already fire events through the pipeline in the ChannelFutureListener.
-                // 通过pipeline的传播机制，触发handlerAdded事件
-                pipeline.invokeHandlerAddedIfNeeded();
-
-                safeSetSuccess(promise);
-                // 通过pipeline的传播机制，触发channelRegistered事件
-                pipeline.fireChannelRegistered();
-                // Only fire a channelActive if the channel has never been registered. This prevents firing
-                // multiple channel actives if the channel is deregistered and re-registered.
-                //激活成功 NioServerSocketChannel 的isActive() 方法  javaChannel().socket().isBound() 服务端注册时是false
-                // 还没有绑定，所以这里的 isActive() 返回false.
-                if (isActive()) {
-                    //首次注册，产生active事件
-                    if (firstRegistration) {
-                        pipeline.fireChannelActive();
-                    } else if (config().isAutoRead()) {
-                        // This channel was registered before and autoRead() is set. This means we need to begin read
-                        // again so that we process inbound data.
-                        // See https://github.com/netty/netty/issues/4805
-                        //如果重注册且配置了自动读
-                        beginRead();
-                    }
-                }
-            } catch (Throwable t) {
-                // Close the channel directly to avoid FD leak.
-                closeForcibly();
-                closeFuture.setClosed();
-                safeSetFailure(promise, t);
-            }
-        }
-
-        /**
-         * 绑定指定的端口，对于服务端，用户绑定监听端口，可以设置backlog参数；
-         * 对于客户端，用于指定客户端Channel的本地绑定Socket地址
-         */
-        @Override
-        public final void bind(final SocketAddress localAddress, final ChannelPromise promise) {
-            assertEventLoop();
-
-            if (!promise.setUncancellable() || !ensureOpen(promise)) {
-                return;
-            }
-
-            // See: https://github.com/netty/netty/issues/576
-            if (Boolean.TRUE.equals(config().getOption(ChannelOption.SO_BROADCAST)) &&
-                    localAddress instanceof InetSocketAddress &&
-                    !((InetSocketAddress) localAddress).getAddress().isAnyLocalAddress() &&
-                    !PlatformDependent.isWindows() && !PlatformDependent.maybeSuperUser()) {
-                // Warn a user about the fact that a non-root user can't receive a
-                // broadcast packet on *nix if the socket is bound on non-wildcard address.
-                logger.warn(
-                        "A non-root user can't receive a broadcast packet if the socket " +
-                                "is not bound to a wildcard address; binding to a non-wildcard " +
-                                "address (" + localAddress + ") anyway as requested.");
-            }
-
-            // wasActive 在绑定成功前为 false
-            boolean wasActive = isActive();
-            try {
-                //调用 NioServerSocketChannel的doBind方法  或者 NioSocketChannel的doBind方法 调用JDK底层API进行端口绑定
-                doBind(localAddress);
-            } catch (Throwable t) {
-                safeSetFailure(promise, t);
-                closeIfClosed();
-                return;
-            }
-
-            //完成绑定之后，isActive() 返回true
-            if (!wasActive && isActive()) {
-                invokeLater(new Runnable() {
-                    //process  查看 DefaultChannelPipeline的  channelActive(ChannelHandlerContext ctx) p1425
-                    @Override
-                    public void run() {
-                        // 触发channelActive事件
-                        pipeline.fireChannelActive();
-                    }
-                });
-            }
-            //将Promis设置为成功
-            safeSetSuccess(promise);
-        }
-
-        /**
-         * 用户客户端或者服务端主动关闭连接
-         */
-        @Override
-        public final void disconnect(final ChannelPromise promise) {
-            assertEventLoop();
-
-            if (!promise.setUncancellable()) {
-                return;
-            }
-
-            boolean wasActive = isActive();
-            try {
-                doDisconnect();
-            } catch (Throwable t) {
-                safeSetFailure(promise, t);
-                closeIfClosed();
-                return;
-            }
-            //断开成功，产生Inactive事件
-            if (wasActive && !isActive()) {
-                invokeLater(new Runnable() {
-                    @Override
-                    public void run() {
-                        pipeline.fireChannelInactive();
-                    }
-                });
-            }
-
-            safeSetSuccess(promise);
-            closeIfClosed(); // doDisconnect() might have closed the channel
-        }
-
-        /**
-         * 在链路关闭之前需要首先判断是否处于刷新状态，如果处于刷新状态说明还有消息尚未发送出去，需要等到所有消息发送完成再关闭链路，因此，将关闭操作封装成Runnable稍后再执行
-         *
-         * @param promise
-         */
-        @Override
-        public final void close(final ChannelPromise promise) {
-            assertEventLoop();
-
-            close(promise, CLOSE_CLOSED_CHANNEL_EXCEPTION, CLOSE_CLOSED_CHANNEL_EXCEPTION, false);
-        }
-
-        /**
-         * Shutdown the output portion of the corresponding {@link Channel}.
-         * For example this will clean up the {@link ChannelOutboundBuffer} and not allow any more writes.
-         */
-        @UnstableApi
-        public final void shutdownOutput(final ChannelPromise promise) {
-            assertEventLoop();
-            shutdownOutput(promise, null);
-        }
-
-        /**
-         * Shutdown the output portion of the corresponding {@link Channel}.
-         * For example this will clean up the {@link ChannelOutboundBuffer} and not allow any more writes.
-         *
-         * @param cause The cause which may provide rational for the shutdown.
-         */
-        private void shutdownOutput(final ChannelPromise promise, Throwable cause) {
-            if (!promise.setUncancellable()) {
-                return;
-            }
-
-            final ChannelOutboundBuffer outboundBuffer = this.outboundBuffer;
-            //如果不存在输出缓冲区，设置Promise为失败，抛出已关闭异常
-            if (outboundBuffer == null) {
-                promise.setFailure(CLOSE_CLOSED_CHANNEL_EXCEPTION);
-                return;
-            }
-            this.outboundBuffer = null; // Disallow adding any messages and flushes to outboundBuffer.
-
-            //线程关闭原因
-            final Throwable shutdownCause = cause == null ?
-                    new ChannelOutputShutdownException("Channel output shutdown") :
-                    new ChannelOutputShutdownException("Channel output shutdown", cause);
-            Executor closeExecutor = prepareToClose();
-            if (closeExecutor != null) {
-                closeExecutor.execute(new Runnable() {
-                    @Override
-                    public void run() {
-                        try {
-                            //关闭流程
-                            // Execute the shutdown.
-                            doShutdownOutput();
-                            promise.setSuccess();
-                        } catch (Throwable err) {
-                            promise.setFailure(err);
-                        } finally {
-                            // Dispatch to the EventLoop
-                            eventLoop().execute(new Runnable() {
-                                @Override
-                                public void run() {
-                                    closeOutboundBufferForShutdown(pipeline, outboundBuffer, shutdownCause);
-                                }
-                            });
-                        }
-                    }
-                });
-            } else {
-                try {
-                    // Execute the shutdown.
-                    doShutdownOutput();
-                    promise.setSuccess();
-                } catch (Throwable err) {
-                    promise.setFailure(err);
-                } finally {
-                    closeOutboundBufferForShutdown(pipeline, outboundBuffer, shutdownCause);
-                }
-            }
-        }
-
-        private void closeOutboundBufferForShutdown(
-                ChannelPipeline pipeline, ChannelOutboundBuffer buffer, Throwable cause) {
-            buffer.failFlushed(cause, false);
-            buffer.close(cause, true);
-            pipeline.fireUserEventTriggered(ChannelOutputShutdownEvent.INSTANCE);
-        }
-
-        private void close(final ChannelPromise promise, final Throwable cause,
-                           final ClosedChannelException closeCause, final boolean notify) {
-            if (!promise.setUncancellable()) {
-                return;
-            }
-
-            if (closeInitiated) {
-                if (closeFuture.isDone()) {
-                    // Closed already.
-                    safeSetSuccess(promise);
-                } else if (!(promise instanceof VoidChannelPromise)) { // Only needed if no VoidChannelPromise.
-                    // This means close() was called before so we just register a listener and return
-                    closeFuture.addListener(new ChannelFutureListener() {
-                        @Override
-                        public void operationComplete(ChannelFuture future) throws Exception {
-                            promise.setSuccess();
-                        }
-                    });
-                }
-                return;
-            }
-
-            closeInitiated = true;
-
-            final boolean wasActive = isActive();
-            final ChannelOutboundBuffer outboundBuffer = this.outboundBuffer;
-            this.outboundBuffer = null; // Disallow adding any messages and flushes to outboundBuffer.
-            Executor closeExecutor = prepareToClose();
-            if (closeExecutor != null) {
-                closeExecutor.execute(new Runnable() {
-                    @Override
-                    public void run() {
-                        try {
-                            // Execute the close.
-                            doClose0(promise);
-                        } finally {
-                            // Call invokeLater so closeAndDeregister is executed in the EventLoop again!
-                            invokeLater(new Runnable() {
-                                @Override
-                                public void run() {
-                                    if (outboundBuffer != null) {
-                                        // Fail all the queued messages
-                                        outboundBuffer.failFlushed(cause, notify);
-                                        outboundBuffer.close(closeCause);
-                                    }
-                                    fireChannelInactiveAndDeregister(wasActive);
-                                }
-                            });
-                        }
-                    }
-                });
-            } else {
-                try {
-                    // Close the channel and fail the queued messages in all cases.
-                    doClose0(promise);
-                } finally {
-                    if (outboundBuffer != null) {
-                        // Fail all the queued messages.
-                        outboundBuffer.failFlushed(cause, notify);
-                        outboundBuffer.close(closeCause);
-                    }
-                }
-                if (inFlush0) {
-                    invokeLater(new Runnable() {
-                        @Override
-                        public void run() {
-                            fireChannelInactiveAndDeregister(wasActive);
-                        }
-                    });
-                } else {
-                    fireChannelInactiveAndDeregister(wasActive);
-                }
-            }
-        }
-
-        private void doClose0(ChannelPromise promise) {
-            try {
-                doClose();
-                closeFuture.setClosed();
-                safeSetSuccess(promise);
-            } catch (Throwable t) {
-                closeFuture.setClosed();
-                safeSetFailure(promise, t);
-            }
-        }
-
-        private void fireChannelInactiveAndDeregister(final boolean wasActive) {
-            deregister(voidPromise(), wasActive && !isActive());
-        }
-
-        @Override
-        public final void closeForcibly() {
-            assertEventLoop();
-
-            try {
-                doClose();
-            } catch (Exception e) {
-                logger.warn("Failed to close a channel.", e);
-            }
-        }
-
-        @Override
-        public final void deregister(final ChannelPromise promise) {
-            assertEventLoop();
-
-            deregister(promise, false);
-        }
-
-        private void deregister(final ChannelPromise promise, final boolean fireChannelInactive) {
-            if (!promise.setUncancellable()) {
-                return;
-            }
-
-            if (!registered) {
-                safeSetSuccess(promise);
-                return;
-            }
-
-            // As a user may call deregister() from within any method while doing processing in the ChannelPipeline,
-            // we need to ensure we do the actual deregister operation later. This is needed as for example,
-            // we may be in the ByteToMessageDecoder.callDecode(...) method and so still try to do processing in
-            // the old EventLoop while the user already registered the Channel to a new EventLoop. Without delay,
-            // the deregister operation this could lead to have a handler invoked by different EventLoop and so
-            // threads.
-            //
-            // See:
-            // https://github.com/netty/netty/issues/4435
-            invokeLater(new Runnable() {
-                @Override
-                public void run() {
-                    try {
-                        doDeregister();
-                    } catch (Throwable t) {
-                        logger.warn("Unexpected exception occurred while deregistering a channel.", t);
-                    } finally {
-                        if (fireChannelInactive) {
-                            pipeline.fireChannelInactive();
-                        }
-                        // Some transports like local and AIO does not allow the deregistration of
-                        // an open channel.  Their doDeregister() calls close(). Consequently,
-                        // close() calls deregister() again - no need to fire channelUnregistered, so check
-                        // if it was registered.
-                        if (registered) {
-                            registered = false;
-                            pipeline.fireChannelUnregistered();
-                        }
-                        safeSetSuccess(promise);
-                    }
-                }
-            });
-        }
-
-        @Override
-        public final void beginRead() {
-            assertEventLoop();
-
-            if (!isActive()) {
-                return;
-            }
-
-            try {
-                //  调用AbstractNioChannel的 doBeginRead()方法  p418
-                doBeginRead();
-            } catch (final Exception e) {
-                invokeLater(new Runnable() {
-                    @Override
-                    public void run() {
-                        pipeline.fireExceptionCaught(e);
-                    }
-                });
-                close(voidPromise());
-            }
-        }
-
-        /**
-         * 将消息添加到环形发送数组中，并不是真正的写入channel
-         */
-        @Override
-        public final void write(Object msg, ChannelPromise promise) {
-            assertEventLoop();
-
-            ChannelOutboundBuffer outboundBuffer = this.outboundBuffer;
-            if (outboundBuffer == null) {
-                // If the outboundBuffer is null we know the channel was closed and so
-                // need to fail the future right away. If it is not null the handling of the rest
-                // will be done in flush0()
-                // See https://github.com/netty/netty/issues/2362
-                safeSetFailure(promise, WRITE_CLOSED_CHANNEL_EXCEPTION);
-                // release message now to prevent resource-leak
-                ReferenceCountUtil.release(msg);
-                return;
-            }
-
-            int size;
-            try {
-                msg = filterOutboundMessage(msg);
-                size = pipeline.estimatorHandle().size(msg);
-                if (size < 0) {
-                    size = 0;
-                }
-            } catch (Throwable t) {
-                safeSetFailure(promise, t);
-                ReferenceCountUtil.release(msg);
-                return;
-            }
-
-            outboundBuffer.addMessage(msg, size, promise);
-        }
-
-        /**
-         * 将发送缓冲区中待发送的消息全部写入到Channel中，并发送给通信对方
-         */
-        @Override
-        public final void flush() {
-            assertEventLoop();
-
-            ChannelOutboundBuffer outboundBuffer = this.outboundBuffer;
-            if (outboundBuffer == null) {
-                return;
-            }
-
-            outboundBuffer.addFlush();
-            flush0();
-        }
-
-        @SuppressWarnings("deprecation")
-        protected void flush0() {
-            if (inFlush0) {
-                // Avoid re-entrance
-                return;
-            }
-
-            final ChannelOutboundBuffer outboundBuffer = this.outboundBuffer;
-            if (outboundBuffer == null || outboundBuffer.isEmpty()) {
-                return;
-            }
-
-            inFlush0 = true;
-
-            // Mark all pending write requests as failure if the channel is inactive.
-            if (!isActive()) {
-                try {
-                    if (isOpen()) {
-                        outboundBuffer.failFlushed(FLUSH0_NOT_YET_CONNECTED_EXCEPTION, true);
-                    } else {
-                        // Do not trigger channelWritabilityChanged because the channel is closed already.
-                        outboundBuffer.failFlushed(FLUSH0_CLOSED_CHANNEL_EXCEPTION, false);
-                    }
-                } finally {
-                    inFlush0 = false;
-                }
-                return;
-            }
-
-            try {
-                doWrite(outboundBuffer);
-            } catch (Throwable t) {
-                if (t instanceof IOException && config().isAutoClose()) {
-                    /**
-                     * Just call {@link #close(ChannelPromise, Throwable, boolean)} here which will take care of
-                     * failing all flushed messages and also ensure the actual close of the underlying transport
-                     * will happen before the promises are notified.
-                     *
-                     * This is needed as otherwise {@link #isActive()} , {@link #isOpen()} and {@link #isWritable()}
-                     * may still return {@code true} even if the channel should be closed as result of the exception.
-                     */
-                    close(voidPromise(), t, FLUSH0_CLOSED_CHANNEL_EXCEPTION, false);
-                } else {
-                    try {
-                        shutdownOutput(voidPromise(), t);
-                    } catch (Throwable t2) {
-                        close(voidPromise(), t2, FLUSH0_CLOSED_CHANNEL_EXCEPTION, false);
-                    }
-                }
-            } finally {
-                inFlush0 = false;
-            }
-        }
-
-        @Override
-        public final ChannelPromise voidPromise() {
-            assertEventLoop();
-
-            return unsafeVoidPromise;
-        }
-
-        protected final boolean ensureOpen(ChannelPromise promise) {
-            if (isOpen()) {
-                return true;
-            }
-
-            safeSetFailure(promise, ENSURE_OPEN_CLOSED_CHANNEL_EXCEPTION);
-            return false;
-        }
-
-        /**
-         * Marks the specified {@code promise} as success.  If the {@code promise} is done already, log a message.
-         */
-        protected final void safeSetSuccess(ChannelPromise promise) {
-            if (!(promise instanceof VoidChannelPromise) && !promise.trySuccess()) {
-                logger.warn("Failed to mark a promise as success because it is done already: {}", promise);
-            }
-        }
-
-        /**
-         * Marks the specified {@code promise} as failure.  If the {@code promise} is done already, log a message.
-         */
-        protected final void safeSetFailure(ChannelPromise promise, Throwable cause) {
-            if (!(promise instanceof VoidChannelPromise) && !promise.tryFailure(cause)) {
-                logger.warn("Failed to mark a promise as failure because it's done already: {}", promise, cause);
-            }
-        }
-
-        protected final void closeIfClosed() {
-            if (isOpen()) {
-                return;
-            }
-            close(voidPromise());
-        }
-
-        private void invokeLater(Runnable task) {
-            try {
-                // This method is used by outbound operation implementations to trigger an inbound event later.
-                // They do not trigger an inbound event immediately because an outbound operation might have been
-                // triggered by another inbound event handler method.  If fired immediately, the call stack
-                // will look like this for example:
-                //
-                //   handlerA.inboundBufferUpdated() - (1) an inbound handler method closes a connection.
-                //   -> handlerA.ctx.close()
-                //      -> channel.unsafe.close()
-                //         -> handlerA.channelInactive() - (2) another inbound handler method called while in (1) yet
-                //
-                // which means the execution of two inbound handler methods of the same handler overlap undesirably.
-                eventLoop().execute(task);
-            } catch (RejectedExecutionException e) {
-                logger.warn("Can't invoke task later as EventLoop rejected it", e);
-            }
-        }
-
-        /**
-         * Appends the remote address to the message of the exceptions caused by connection attempt failure.
-         */
-        protected final Throwable annotateConnectException(Throwable cause, SocketAddress remoteAddress) {
-            if (cause instanceof ConnectException) {
-                return new AnnotatedConnectException((ConnectException) cause, remoteAddress);
-            }
-            if (cause instanceof NoRouteToHostException) {
-                return new AnnotatedNoRouteToHostException((NoRouteToHostException) cause, remoteAddress);
-            }
-            if (cause instanceof SocketException) {
-                return new AnnotatedSocketException((SocketException) cause, remoteAddress);
-            }
-
-            return cause;
-        }
-
-        /**
-         * Prepares to close the {@link Channel}. If this method returns an {@link Executor}, the
-         * caller must call the {@link Executor#execute(Runnable)} method with a task that calls
-         * {@link #doClose()} on the returned {@link Executor}. If this method returns {@code null},
-         * {@link #doClose()} must be called from the caller thread. (i.e. {@link EventLoop})
-         */
-        protected Executor prepareToClose() {
-            return null;
-        }
-    }
-
     /**
      * Return {@code true} if the given {@link EventLoop} is compatible with this instance.
      */
@@ -1361,4 +680,700 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
     }
 
 
+
+
+    /**
+     * {@link Unsafe} implementation which sub-classes must extend and use.
+     * Unsafe的抽象实现，虽然是抽象类，但没有抽象的方法，只是对某些方法提供了空实现；一些方法的关键实现是交给AbstractChannel的特定子类实现
+     */
+    protected abstract class AbstractUnsafe implements Unsafe {
+        /**
+         * ChannelOutboundBuffer实质上是无界的单向链表
+         *  Netty 向站外输出数据的过程统一通过 ChannelOutboundBuffer 类进行封装，目的是为了提高网络的吞吐量，
+         *  在外面调用 write 的时候，数据并没有写到 Socket，而是写到了 ChannelOutboundBuffer 这里，当调用 flush 的时候，才真正的向 Socket 写出。
+         */
+        private volatile ChannelOutboundBuffer outboundBuffer = new ChannelOutboundBuffer(AbstractChannel.this);
+        private RecvByteBufAllocator.Handle recvHandle;
+        private boolean inFlush0;
+        /**
+         * true if the channel has never been registered, false otherwise
+         */
+        private boolean neverRegistered = true;
+
+        private void assertEventLoop() {
+            assert !registered || eventLoop.inEventLoop();
+        }
+
+        @Override
+        public RecvByteBufAllocator.Handle recvBufAllocHandle() {
+            if (recvHandle == null) {
+                recvHandle = config().getRecvByteBufAllocator().newHandle();
+            }
+            return recvHandle;
+        }
+
+        @Override
+        public final ChannelOutboundBuffer outboundBuffer() {
+            return outboundBuffer;
+        }
+
+        @Override
+        public final SocketAddress localAddress() {
+            return localAddress0();
+        }
+
+        @Override
+        public final SocketAddress remoteAddress() {
+            return remoteAddress0();
+        }
+
+        /**
+         * 将当前Unsafe对应的Channel注册到EventLoop的多路复用器上，然后调用DefaultChannelPipeline的fireChannelRegistered方法
+         * 如果Channel被激活，则调用DefaultChannelPipeline的fireChannelActive方法
+         */
+        @Override
+        public final void register(EventLoop eventLoop, final ChannelPromise promise) {
+            if (eventLoop == null) {
+                throw new NullPointerException("eventLoop");
+            }
+            if (isRegistered()) {
+                promise.setFailure(new IllegalStateException("registered to an event loop already"));
+                return;
+            }
+            if (!isCompatible(eventLoop)) {
+                promise.setFailure(
+                        new IllegalStateException("incompatible event loop type: " + eventLoop.getClass().getName()));
+                return;
+            }
+
+            // 将该Channel与eventLoop 进行绑定(保存起来)，后续与该channel相关的IO操作都由eventLoop来处理,从parentGroup(NioEventLoopGroup)分配到的NioEventLoop线程
+            AbstractChannel.this.eventLoop = eventLoop;
+            /**
+             * 判断当前线程是否是Channel对应的NioEventLoop线程，如果是同一个线程，则不存在多线程并发操作问题，直接调用register0进行注册；
+             * 如果是由用户线程或者其他线程发起的注册操作，则将注册操作封装成Runnable，放到NioEventLoop任务队列中执行。
+             *
+             * 初次注册时 eventLoop.inEventLoop() 返回false
+             */
+            if (eventLoop.inEventLoop()) {
+                register0(promise);
+            } else {
+                try {
+                    eventLoop.execute(new Runnable() {
+                        @Override
+                        public void run() {
+                            // 调用实际的注册接口register0
+                            // 执行 SingleThreadEventExecutor 的execute线程
+                            register0(promise);
+                        }
+                    });
+                } catch (Throwable t) {
+                    logger.warn(
+                            "Force-closing a channel whose registration task was not accepted by an event loop: {}",
+                            AbstractChannel.this, t);
+                    closeForcibly();
+                    closeFuture.setClosed();
+                    safeSetFailure(promise, t);
+                }
+            }
+        }
+
+        private void register0(ChannelPromise promise) {
+            try {
+                // check if the channel is still open as it could be closed in the mean time when the register
+                // call was outside of the eventLoop
+                //判断当前Channel是否打开
+                if (!promise.setUncancellable() || !ensureOpen(promise)) {
+                    return;
+                }
+                boolean firstRegistration = neverRegistered;
+                /** 由AbstractNioChannel类的 内部类AbstractNioUnsafe 实现
+                 * 调用子类去实现 {@link AbstractNioChannel#doRegister()}
+                 */
+                doRegister();
+                //修改注册状态
+                neverRegistered = false;
+                registered = true;
+
+                // Ensure we call handlerAdded(...) before we actually notify the promise. This is needed as the
+                // user may already fire events through the pipeline in the ChannelFutureListener.
+                // 通过pipeline的传播机制，触发handlerAdded事件
+                pipeline.invokeHandlerAddedIfNeeded();
+
+                safeSetSuccess(promise);
+                // 通过pipeline的传播机制，触发channelRegistered事件
+                pipeline.fireChannelRegistered();
+                // Only fire a channelActive if the channel has never been registered. This prevents firing
+                // multiple channel actives if the channel is deregistered and re-registered.
+                //激活成功 NioServerSocketChannel 的isActive() 方法  javaChannel().socket().isBound() 服务端注册时是false
+                // 还没有绑定，所以这里的 isActive() 返回false.
+                if (isActive()) {
+                    //首次注册，产生active事件
+                    if (firstRegistration) {
+                        pipeline.fireChannelActive();
+                    } else if (config().isAutoRead()) {
+                        // This channel was registered before and autoRead() is set. This means we need to begin read
+                        // again so that we process inbound data.
+                        // See https://github.com/netty/netty/issues/4805
+                        //如果重注册且配置了自动读
+                        beginRead();
+                    }
+                }
+            } catch (Throwable t) {
+                // Close the channel directly to avoid FD leak.
+                closeForcibly();
+                closeFuture.setClosed();
+                safeSetFailure(promise, t);
+            }
+        }
+
+        /**
+         * 绑定指定的端口，对于服务端，用户绑定监听端口，可以设置backlog参数；
+         * 对于客户端，用于指定客户端Channel的本地绑定Socket地址
+         */
+        @Override
+        public final void bind(final SocketAddress localAddress, final ChannelPromise promise) {
+            assertEventLoop();
+
+            if (!promise.setUncancellable() || !ensureOpen(promise)) {
+                return;
+            }
+
+            // See: https://github.com/netty/netty/issues/576
+            if (Boolean.TRUE.equals(config().getOption(ChannelOption.SO_BROADCAST)) &&
+                    localAddress instanceof InetSocketAddress &&
+                    !((InetSocketAddress) localAddress).getAddress().isAnyLocalAddress() &&
+                    !PlatformDependent.isWindows() && !PlatformDependent.maybeSuperUser()) {
+                // Warn a user about the fact that a non-root user can't receive a
+                // broadcast packet on *nix if the socket is bound on non-wildcard address.
+                logger.warn(
+                        "A non-root user can't receive a broadcast packet if the socket " +
+                                "is not bound to a wildcard address; binding to a non-wildcard " +
+                                "address (" + localAddress + ") anyway as requested.");
+            }
+
+            // wasActive 在绑定成功前为 false
+            boolean wasActive = isActive();
+            try {
+                /**调用JDK底层API进行端口绑定
+                 *
+                 * 客户端调用NioServerSocketChannel的doBind方法  {@link NioSocketChannel#doBind(java.net.SocketAddress)}
+                 * 服务端调用 NioSocketChannel的doBind方法  {@link NioServerSocketChannel#doBind(java.net.SocketAddress)}
+                 */
+                doBind(localAddress);
+            } catch (Throwable t) {
+                safeSetFailure(promise, t);
+                closeIfClosed();
+                return;
+            }
+
+            //完成绑定之后，isActive() 返回true
+            if (!wasActive && isActive()) {
+                invokeLater(new Runnable() {
+                    //process  查看 DefaultChannelPipeline的  channelActive(ChannelHandlerContext ctx) p1425
+                    @Override
+                    public void run() {
+                        // 触发channelActive事件
+                        pipeline.fireChannelActive();
+                    }
+                });
+            }
+            //将Promis设置为成功
+            safeSetSuccess(promise);
+        }
+
+        /**
+         * 用户客户端或者服务端主动关闭连接
+         */
+        @Override
+        public final void disconnect(final ChannelPromise promise) {
+            assertEventLoop();
+
+            if (!promise.setUncancellable()) {
+                return;
+            }
+
+            boolean wasActive = isActive();
+            try {
+                /**
+                 * 客户端 {@link io.netty.channel.socket.nio.NioSocketChannel#doDisconnect()}
+                 * 如果服务端调用此方法会抛出异常， {@link NioServerSocketChannel#doDisconnect()}
+                 */
+                doDisconnect();
+            } catch (Throwable t) {
+                safeSetFailure(promise, t);
+                closeIfClosed();
+                return;
+            }
+            //断开成功，产生Inactive事件
+            if (wasActive && !isActive()) {
+                invokeLater(new Runnable() {
+                    @Override
+                    public void run() {
+                        pipeline.fireChannelInactive();
+                    }
+                });
+            }
+
+            safeSetSuccess(promise);
+            closeIfClosed(); // doDisconnect() might have closed the channel
+        }
+
+        /**
+         * 在链路关闭之前需要首先判断是否处于刷新状态，如果处于刷新状态说明还有消息尚未发送出去，需要等到所有消息发送完成再关闭链路，因此，将关闭操作封装成Runnable稍后再执行
+         *
+         * @param promise
+         */
+        @Override
+        public final void close(final ChannelPromise promise) {
+            assertEventLoop();
+
+            close(promise, CLOSE_CLOSED_CHANNEL_EXCEPTION, CLOSE_CLOSED_CHANNEL_EXCEPTION, false);
+        }
+
+        @Override
+        public final void deregister(final ChannelPromise promise) {
+            assertEventLoop();
+
+            deregister(promise, false);
+        }
+
+        private void deregister(final ChannelPromise promise, final boolean fireChannelInactive) {
+            if (!promise.setUncancellable()) {
+                return;
+            }
+
+            if (!registered) {
+                safeSetSuccess(promise);
+                return;
+            }
+
+            // As a user may call deregister() from within any method while doing processing in the ChannelPipeline,
+            // we need to ensure we do the actual deregister operation later. This is needed as for example,
+            // we may be in the ByteToMessageDecoder.callDecode(...) method and so still try to do processing in
+            // the old EventLoop while the user already registered the Channel to a new EventLoop. Without delay,
+            // the deregister operation this could lead to have a handler invoked by different EventLoop and so
+            // threads.
+            //
+            // See:
+            // https://github.com/netty/netty/issues/4435
+            invokeLater(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        doDeregister();
+                    } catch (Throwable t) {
+                        logger.warn("Unexpected exception occurred while deregistering a channel.", t);
+                    } finally {
+                        if (fireChannelInactive) {
+                            pipeline.fireChannelInactive();
+                        }
+                        // Some transports like local and AIO does not allow the deregistration of
+                        // an open channel.  Their doDeregister() calls close(). Consequently,
+                        // close() calls deregister() again - no need to fire channelUnregistered, so check
+                        // if it was registered.
+                        if (registered) {
+                            registered = false;
+                            pipeline.fireChannelUnregistered();
+                        }
+                        safeSetSuccess(promise);
+                    }
+                }
+            });
+        }
+
+        @Override
+        public final void beginRead() {
+            assertEventLoop();
+
+            if (!isActive()) {
+                return;
+            }
+
+            try {
+                /**
+                 * 调用实现类方法 {@link AbstractNioChannel#doBeginRead()}
+                 */
+                doBeginRead();
+            } catch (final Exception e) {
+                invokeLater(new Runnable() {
+                    @Override
+                    public void run() {
+                        pipeline.fireExceptionCaught(e);
+                    }
+                });
+                close(voidPromise());
+            }
+        }
+
+        /**
+         * 将消息添加到环形发送数组中，并不是真正的写入channel
+         */
+        @Override
+        public final void write(Object msg, ChannelPromise promise) {
+            assertEventLoop();
+
+            ChannelOutboundBuffer outboundBuffer = this.outboundBuffer;
+            if (outboundBuffer == null) {
+                // If the outboundBuffer is null we know the channel was closed and so
+                // need to fail the future right away. If it is not null the handling of the rest
+                // will be done in flush0()
+                // See https://github.com/netty/netty/issues/2362
+                safeSetFailure(promise, WRITE_CLOSED_CHANNEL_EXCEPTION);
+                // release message now to prevent resource-leak
+                ReferenceCountUtil.release(msg);
+                return;
+            }
+
+            int size;
+            try {
+                msg = filterOutboundMessage(msg);
+                size = pipeline.estimatorHandle().size(msg);
+                if (size < 0) {
+                    size = 0;
+                }
+            } catch (Throwable t) {
+                safeSetFailure(promise, t);
+                ReferenceCountUtil.release(msg);
+                return;
+            }
+
+            outboundBuffer.addMessage(msg, size, promise);
+        }
+
+        /**
+         * 将发送缓冲区中待发送的消息全部写入到Channel中，并发送给通信对方
+         */
+        @Override
+        public final void flush() {
+            assertEventLoop();
+
+            ChannelOutboundBuffer outboundBuffer = this.outboundBuffer;
+            if (outboundBuffer == null) {
+                return;
+            }
+
+            outboundBuffer.addFlush();
+            flush0();
+        }
+
+        @SuppressWarnings("deprecation")
+        protected void flush0() {
+            if (inFlush0) {
+                // Avoid re-entrance
+                return;
+            }
+
+            final ChannelOutboundBuffer outboundBuffer = this.outboundBuffer;
+            if (outboundBuffer == null || outboundBuffer.isEmpty()) {
+                return;
+            }
+
+            inFlush0 = true;
+
+            // Mark all pending write requests as failure if the channel is inactive.
+            if (!isActive()) {
+                try {
+                    if (isOpen()) {
+                        outboundBuffer.failFlushed(FLUSH0_NOT_YET_CONNECTED_EXCEPTION, true);
+                    } else {
+                        // Do not trigger channelWritabilityChanged because the channel is closed already.
+                        outboundBuffer.failFlushed(FLUSH0_CLOSED_CHANNEL_EXCEPTION, false);
+                    }
+                } finally {
+                    inFlush0 = false;
+                }
+                return;
+            }
+
+            try {
+                doWrite(outboundBuffer);
+            } catch (Throwable t) {
+                if (t instanceof IOException && config().isAutoClose()) {
+                    /**
+                     * Just call {@link #close(ChannelPromise, Throwable, boolean)} here which will take care of
+                     * failing all flushed messages and also ensure the actual close of the underlying transport
+                     * will happen before the promises are notified.
+                     *
+                     * This is needed as otherwise {@link #isActive()} , {@link #isOpen()} and {@link #isWritable()}
+                     * may still return {@code true} even if the channel should be closed as result of the exception.
+                     */
+                    close(voidPromise(), t, FLUSH0_CLOSED_CHANNEL_EXCEPTION, false);
+                } else {
+                    try {
+                        shutdownOutput(voidPromise(), t);
+                    } catch (Throwable t2) {
+                        close(voidPromise(), t2, FLUSH0_CLOSED_CHANNEL_EXCEPTION, false);
+                    }
+                }
+            } finally {
+                inFlush0 = false;
+            }
+        }
+
+
+        /**
+         * Shutdown the output portion of the corresponding {@link Channel}.
+         * For example this will clean up the {@link ChannelOutboundBuffer} and not allow any more writes.
+         */
+        @UnstableApi
+        public final void shutdownOutput(final ChannelPromise promise) {
+            assertEventLoop();
+            shutdownOutput(promise, null);
+        }
+
+        /**
+         * Shutdown the output portion of the corresponding {@link Channel}.
+         * For example this will clean up the {@link ChannelOutboundBuffer} and not allow any more writes.
+         *
+         * @param cause The cause which may provide rational for the shutdown.
+         */
+        private void shutdownOutput(final ChannelPromise promise, Throwable cause) {
+            if (!promise.setUncancellable()) {
+                return;
+            }
+
+            final ChannelOutboundBuffer outboundBuffer = this.outboundBuffer;
+            //如果不存在输出缓冲区，设置Promise为失败，抛出已关闭异常
+            if (outboundBuffer == null) {
+                promise.setFailure(CLOSE_CLOSED_CHANNEL_EXCEPTION);
+                return;
+            }
+            this.outboundBuffer = null; // Disallow adding any messages and flushes to outboundBuffer.
+
+            //线程关闭原因
+            final Throwable shutdownCause = cause == null ?
+                    new ChannelOutputShutdownException("Channel output shutdown") :
+                    new ChannelOutputShutdownException("Channel output shutdown", cause);
+            Executor closeExecutor = prepareToClose();
+            if (closeExecutor != null) {
+                closeExecutor.execute(new Runnable() {
+                    @Override
+                    public void run() {
+                        try {
+                            //关闭流程
+                            // Execute the shutdown.
+                            doShutdownOutput();
+                            promise.setSuccess();
+                        } catch (Throwable err) {
+                            promise.setFailure(err);
+                        } finally {
+                            // Dispatch to the EventLoop
+                            eventLoop().execute(new Runnable() {
+                                @Override
+                                public void run() {
+                                    closeOutboundBufferForShutdown(pipeline, outboundBuffer, shutdownCause);
+                                }
+                            });
+                        }
+                    }
+                });
+            } else {
+                try {
+                    // Execute the shutdown.
+                    doShutdownOutput();
+                    promise.setSuccess();
+                } catch (Throwable err) {
+                    promise.setFailure(err);
+                } finally {
+                    closeOutboundBufferForShutdown(pipeline, outboundBuffer, shutdownCause);
+                }
+            }
+        }
+
+        private void closeOutboundBufferForShutdown(
+                ChannelPipeline pipeline, ChannelOutboundBuffer buffer, Throwable cause) {
+            buffer.failFlushed(cause, false);
+            buffer.close(cause, true);
+            pipeline.fireUserEventTriggered(ChannelOutputShutdownEvent.INSTANCE);
+        }
+
+        private void close(final ChannelPromise promise, final Throwable cause,
+                           final ClosedChannelException closeCause, final boolean notify) {
+            if (!promise.setUncancellable()) {
+                return;
+            }
+
+            if (closeInitiated) {
+                if (closeFuture.isDone()) {
+                    // Closed already.
+                    safeSetSuccess(promise);
+                } else if (!(promise instanceof VoidChannelPromise)) { // Only needed if no VoidChannelPromise.
+                    // This means close() was called before so we just register a listener and return
+                    closeFuture.addListener(new ChannelFutureListener() {
+                        @Override
+                        public void operationComplete(ChannelFuture future) throws Exception {
+                            promise.setSuccess();
+                        }
+                    });
+                }
+                return;
+            }
+
+            closeInitiated = true;
+
+            final boolean wasActive = isActive();
+            final ChannelOutboundBuffer outboundBuffer = this.outboundBuffer;
+            this.outboundBuffer = null; // Disallow adding any messages and flushes to outboundBuffer.
+            Executor closeExecutor = prepareToClose();
+            if (closeExecutor != null) {
+                closeExecutor.execute(new Runnable() {
+                    @Override
+                    public void run() {
+                        try {
+                            // Execute the close.
+                            doClose0(promise);
+                        } finally {
+                            // Call invokeLater so closeAndDeregister is executed in the EventLoop again!
+                            invokeLater(new Runnable() {
+                                @Override
+                                public void run() {
+                                    if (outboundBuffer != null) {
+                                        // Fail all the queued messages
+                                        outboundBuffer.failFlushed(cause, notify);
+                                        outboundBuffer.close(closeCause);
+                                    }
+                                    fireChannelInactiveAndDeregister(wasActive);
+                                }
+                            });
+                        }
+                    }
+                });
+            } else {
+                try {
+                    // Close the channel and fail the queued messages in all cases.
+                    doClose0(promise);
+                } finally {
+                    if (outboundBuffer != null) {
+                        // Fail all the queued messages.
+                        outboundBuffer.failFlushed(cause, notify);
+                        outboundBuffer.close(closeCause);
+                    }
+                }
+                if (inFlush0) {
+                    invokeLater(new Runnable() {
+                        @Override
+                        public void run() {
+                            fireChannelInactiveAndDeregister(wasActive);
+                        }
+                    });
+                } else {
+                    fireChannelInactiveAndDeregister(wasActive);
+                }
+            }
+        }
+
+        private void doClose0(ChannelPromise promise) {
+            try {
+                doClose();
+                closeFuture.setClosed();
+                safeSetSuccess(promise);
+            } catch (Throwable t) {
+                closeFuture.setClosed();
+                safeSetFailure(promise, t);
+            }
+        }
+
+        private void fireChannelInactiveAndDeregister(final boolean wasActive) {
+            deregister(voidPromise(), wasActive && !isActive());
+        }
+
+        @Override
+        public final void closeForcibly() {
+            assertEventLoop();
+
+            try {
+                doClose();
+            } catch (Exception e) {
+                logger.warn("Failed to close a channel.", e);
+            }
+        }
+
+
+        @Override
+        public final ChannelPromise voidPromise() {
+            assertEventLoop();
+
+            return unsafeVoidPromise;
+        }
+
+        protected final boolean ensureOpen(ChannelPromise promise) {
+            if (isOpen()) {
+                return true;
+            }
+
+            safeSetFailure(promise, ENSURE_OPEN_CLOSED_CHANNEL_EXCEPTION);
+            return false;
+        }
+
+        /**
+         * Marks the specified {@code promise} as success.  If the {@code promise} is done already, log a message.
+         */
+        protected final void safeSetSuccess(ChannelPromise promise) {
+            if (!(promise instanceof VoidChannelPromise) && !promise.trySuccess()) {
+                logger.warn("Failed to mark a promise as success because it is done already: {}", promise);
+            }
+        }
+
+        /**
+         * Marks the specified {@code promise} as failure.  If the {@code promise} is done already, log a message.
+         */
+        protected final void safeSetFailure(ChannelPromise promise, Throwable cause) {
+            if (!(promise instanceof VoidChannelPromise) && !promise.tryFailure(cause)) {
+                logger.warn("Failed to mark a promise as failure because it's done already: {}", promise, cause);
+            }
+        }
+
+        protected final void closeIfClosed() {
+            if (isOpen()) {
+                return;
+            }
+            close(voidPromise());
+        }
+
+        private void invokeLater(Runnable task) {
+            try {
+                // This method is used by outbound operation implementations to trigger an inbound event later.
+                // They do not trigger an inbound event immediately because an outbound operation might have been
+                // triggered by another inbound event handler method.  If fired immediately, the call stack
+                // will look like this for example:
+                //
+                //   handlerA.inboundBufferUpdated() - (1) an inbound handler method closes a connection.
+                //   -> handlerA.ctx.close()
+                //      -> channel.unsafe.close()
+                //         -> handlerA.channelInactive() - (2) another inbound handler method called while in (1) yet
+                //
+                // which means the execution of two inbound handler methods of the same handler overlap undesirably.
+                eventLoop().execute(task);
+            } catch (RejectedExecutionException e) {
+                logger.warn("Can't invoke task later as EventLoop rejected it", e);
+            }
+        }
+
+        /**
+         * Appends the remote address to the message of the exceptions caused by connection attempt failure.
+         */
+        protected final Throwable annotateConnectException(Throwable cause, SocketAddress remoteAddress) {
+            if (cause instanceof ConnectException) {
+                return new AnnotatedConnectException((ConnectException) cause, remoteAddress);
+            }
+            if (cause instanceof NoRouteToHostException) {
+                return new AnnotatedNoRouteToHostException((NoRouteToHostException) cause, remoteAddress);
+            }
+            if (cause instanceof SocketException) {
+                return new AnnotatedSocketException((SocketException) cause, remoteAddress);
+            }
+
+            return cause;
+        }
+
+        /**
+         * Prepares to close the {@link Channel}. If this method returns an {@link Executor}, the
+         * caller must call the {@link Executor#execute(Runnable)} method with a task that calls
+         * {@link #doClose()} on the returned {@link Executor}. If this method returns {@code null},
+         * {@link #doClose()} must be called from the caller thread. (i.e. {@link EventLoop})
+         */
+        protected Executor prepareToClose() {
+            return null;
+        }
+    }
 }
