@@ -110,6 +110,9 @@ public class NioServerSocketChannel extends AbstractNioMessageChannel
         return (ServerSocketChannel) super.javaChannel();
     }
 
+    /**
+     * 绑定端口
+     */
     @Override
     protected void doBind(SocketAddress localAddress) throws Exception {
         if (PlatformDependent.javaVersion() >= 7) {

@@ -91,7 +91,9 @@ public class NioSocketChannel extends AbstractNioByteChannel implements io.netty
      * 在服务端生成channel被调用: {@link io.netty.channel.socket.nio.NioServerSocketChannel#doReadMessages(java.util.List)}
      */
     public NioSocketChannel(Channel parent, SocketChannel socket) {
+        // 调用父类构造器
         super(parent, socket);
+        // 创建NioSocketChannelConfig,默认开启 TCP_NODELAY ，开启TCP的nagle算法
         config = new NioSocketChannelConfig(this, socket.socket());
     }
 
@@ -156,6 +158,7 @@ public class NioSocketChannel extends AbstractNioByteChannel implements io.netty
 
         boolean success = false;
         try {
+            //连接服务端
             boolean connected = SocketUtils.connect(javaChannel(), remoteAddress);
             if (!connected) {
                 selectionKey().interestOps(SelectionKey.OP_CONNECT);
@@ -169,6 +172,9 @@ public class NioSocketChannel extends AbstractNioByteChannel implements io.netty
         }
     }
 
+    /**
+     * 绑定端口
+     */
     private void doBind0(SocketAddress localAddress) throws Exception {
         if (PlatformDependent.javaVersion() >= 7) {
             SocketUtils.bind(javaChannel(), localAddress);
@@ -182,6 +188,7 @@ public class NioSocketChannel extends AbstractNioByteChannel implements io.netty
         SocketChannel ch = javaChannel();
         int writeSpinCount = config().getWriteSpinCount();
         do {
+            //没有数据退出
             if (in.isEmpty()) {
                 // All written so clear OP_WRITE
                 clearOpWrite();
@@ -196,6 +203,7 @@ public class NioSocketChannel extends AbstractNioByteChannel implements io.netty
 
             // Always us nioBuffers() to workaround data-corruption.
             // See https://github.com/netty/netty/issues/2761
+            //如果没有ByteBuffer 有可能只发送几个byte
             switch (nioBufferCnt) {
                 case 0:
                     // We have something else beside ByteBuffers to write so fallback to normal writes.
@@ -260,6 +268,18 @@ public class NioSocketChannel extends AbstractNioByteChannel implements io.netty
     }
 
     @Override
+    public InetSocketAddress localAddress() {
+        return (InetSocketAddress) super.localAddress();
+    }
+
+    @Override
+    public InetSocketAddress remoteAddress() {
+        return (InetSocketAddress) super.remoteAddress();
+    }
+
+
+
+    @Override
     public boolean isOutputShutdown() {
         return javaChannel().socket().isOutputShutdown() || !isActive();
     }
@@ -275,15 +295,6 @@ public class NioSocketChannel extends AbstractNioByteChannel implements io.netty
         return socket.isInputShutdown() && socket.isOutputShutdown() || !isActive();
     }
 
-    @Override
-    public InetSocketAddress localAddress() {
-        return (InetSocketAddress) super.localAddress();
-    }
-
-    @Override
-    public InetSocketAddress remoteAddress() {
-        return (InetSocketAddress) super.remoteAddress();
-    }
 
     @UnstableApi
     @Override
@@ -492,6 +503,7 @@ public class NioSocketChannel extends AbstractNioByteChannel implements io.netty
         private volatile int maxBytesPerGatheringWrite = Integer.MAX_VALUE;
 
         private NioSocketChannelConfig(NioSocketChannel channel, Socket javaSocket) {
+            // 调用父类构造器
             super(channel, javaSocket);
             calculateMaxBytesPerGatheringWrite();
         }
