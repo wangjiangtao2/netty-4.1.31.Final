@@ -79,6 +79,7 @@ public abstract class AbstractNioChannel extends AbstractChannel {
      */
     volatile SelectionKey selectionKey;
     boolean readPending;
+
     private final Runnable clearReadPendingRunnable = new Runnable() {
         @Override
         public void run() {
@@ -107,7 +108,7 @@ public abstract class AbstractNioChannel extends AbstractChannel {
     protected AbstractNioChannel(Channel parent, SelectableChannel ch, int readInterestOp) {
         // 调用 AbstractChannel 构造器
         super(parent);
-        // 保存jdk底层 ServerSocketChannel
+        // 保存jdk底层 ServerSocketChannel/SocketChannel
         this.ch = ch;
         // 从上一步过来 服务端:SelectionKey.OP_ACCEPT  SelectionKey.OP_READ
         this.readInterestOp = readInterestOp;
