@@ -19,6 +19,7 @@ import io.netty.channel.ChannelException;
 import io.netty.channel.ChannelMetadata;
 import io.netty.channel.ChannelOption;
 import io.netty.channel.ChannelOutboundBuffer;
+import io.netty.channel.nio.AbstractNioChannel;
 import io.netty.util.internal.SocketUtils;
 import io.netty.channel.nio.AbstractNioMessageChannel;
 import io.netty.channel.socket.DefaultServerSocketChannelConfig;
@@ -53,6 +54,12 @@ public class NioServerSocketChannel extends AbstractNioMessageChannel
     private static final ChannelMetadata METADATA = new ChannelMetadata(false, 16);
     private static final SelectorProvider DEFAULT_SELECTOR_PROVIDER = SelectorProvider.provider();
 
+    /**
+     * 服务端配置
+     */
+    private final ServerSocketChannelConfig config;
+
+
     /** 创建jdk 底层 ServerSocketChannel 打开新的ServerSocketChannel通道 */
     private static ServerSocketChannel newSocket(SelectorProvider provider) {
         try {
@@ -70,21 +77,12 @@ public class NioServerSocketChannel extends AbstractNioMessageChannel
         }
     }
 
-    private final ServerSocketChannelConfig config;
-
     /**
      * Create a new instance
+     * 创建netty的 NioServerSocketChannel
      */
-    //创建netty的 NioServerSocketChannel
     public NioServerSocketChannel() {
         this(newSocket(DEFAULT_SELECTOR_PROVIDER));
-    }
-
-    /**
-     * Create a new instance using the given {@link SelectorProvider}.
-     */
-    public NioServerSocketChannel(SelectorProvider provider) {
-        this(newSocket(provider));
     }
 
     /**
@@ -97,42 +95,19 @@ public class NioServerSocketChannel extends AbstractNioMessageChannel
         config = new NioServerSocketChannelConfig(this, javaChannel().socket());
     }
 
-    @Override
-    public InetSocketAddress localAddress() {
-        return (InetSocketAddress) super.localAddress();
-    }
-
-    @Override
-    public ChannelMetadata metadata() {
-        return METADATA;
-    }
-
-    @Override
-    public ServerSocketChannelConfig config() {
-        return config;
+    /**
+     * Create a new instance using the given {@link SelectorProvider}.
+     */
+    public NioServerSocketChannel(SelectorProvider provider) {
+        this(newSocket(provider));
     }
 
     /**
-     * 判断服务端监听端口是否处于绑定状态
+     * 返回 JDK底层的 ServerSocketChannel {@link AbstractNioChannel#javaChannel()}
      */
-    @Override
-    public boolean isActive() {
-        return javaChannel().socket().isBound();
-    }
-
-    @Override
-    public InetSocketAddress remoteAddress() {
-        return null;
-    }
-
     @Override
     protected ServerSocketChannel javaChannel() {
         return (ServerSocketChannel) super.javaChannel();
-    }
-
-    @Override
-    protected SocketAddress localAddress0() {
-        return SocketUtils.localSocketAddress(javaChannel().socket());
     }
 
     @Override
@@ -143,12 +118,6 @@ public class NioServerSocketChannel extends AbstractNioMessageChannel
             javaChannel().socket().bind(localAddress, config.getBacklog());
         }
     }
-
-    @Override
-    protected void doClose() throws Exception {
-        javaChannel().close();
-    }
-
     /**
      * 接收新的客户端连接，如果SocketChannel不为空，
      * 则利用当前的NioServerSocketChannel、EventLoop和SocketChannel创建新的NioSocketChannel，并将其加入到List<Object>buf中，最后返回1，表示服务端消息读取成功
@@ -174,6 +143,49 @@ public class NioServerSocketChannel extends AbstractNioMessageChannel
         return 0;
     }
 
+    @Override
+    protected void doClose() throws Exception {
+        javaChannel().close();
+    }
+
+    @Override
+    public InetSocketAddress localAddress() {
+        return (InetSocketAddress) super.localAddress();
+    }
+
+    @Override
+    public InetSocketAddress remoteAddress() {
+        return null;
+    }
+
+    @Override
+    public ChannelMetadata metadata() {
+        return METADATA;
+    }
+
+    @Override
+    public ServerSocketChannelConfig config() {
+        return config;
+    }
+
+    /**
+     * 判断服务端监听端口是否处于绑定状态
+     */
+    @Override
+    public boolean isActive() {
+        return javaChannel().socket().isBound();
+    }
+
+    @Override
+    protected SocketAddress localAddress0() {
+        return SocketUtils.localSocketAddress(javaChannel().socket());
+    }
+
+    @Override
+    protected SocketAddress remoteAddress0() {
+        return null;
+    }
+
     // Unnecessary stuff
     @Override
     protected boolean doConnect(
@@ -184,11 +196,6 @@ public class NioServerSocketChannel extends AbstractNioMessageChannel
     @Override
     protected void doFinishConnect() throws Exception {
         throw new UnsupportedOperationException();
-    }
-
-    @Override
-    protected SocketAddress remoteAddress0() {
-        return null;
     }
 
     @Override

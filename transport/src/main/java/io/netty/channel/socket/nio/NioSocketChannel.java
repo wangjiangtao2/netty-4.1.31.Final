@@ -27,6 +27,7 @@ import io.netty.channel.EventLoop;
 import io.netty.channel.FileRegion;
 import io.netty.channel.RecvByteBufAllocator;
 import io.netty.channel.nio.AbstractNioByteChannel;
+import io.netty.channel.nio.AbstractNioChannel;
 import io.netty.channel.socket.DefaultSocketChannelConfig;
 import io.netty.channel.socket.ServerSocketChannel;
 import io.netty.channel.socket.SocketChannelConfig;
@@ -63,6 +64,11 @@ public class NioSocketChannel extends AbstractNioByteChannel implements io.netty
 
     private static final SelectorProvider DEFAULT_SELECTOR_PROVIDER = SelectorProvider.provider();
 
+    /**
+     * 客户端配置
+     */
+    private final SocketChannelConfig config;
+
     private static SocketChannel newSocket(SelectorProvider provider) {
         try {
             /**
@@ -77,7 +83,17 @@ public class NioSocketChannel extends AbstractNioByteChannel implements io.netty
         }
     }
 
-    private final SocketChannelConfig config;
+    /**
+     * Create a new instance
+     * @param parent    the {@link Channel} which created this instance or {@code null} if it was created by the user
+     * @param socket    the {@link SocketChannel} which will be used
+     *
+     * 在服务端生成channel被调用: {@link io.netty.channel.socket.nio.NioServerSocketChannel#doReadMessages(java.util.List)}
+     */
+    public NioSocketChannel(Channel parent, SocketChannel socket) {
+        super(parent, socket);
+        config = new NioSocketChannelConfig(this, socket.socket());
+    }
 
     /**
      * Create a new instance
@@ -100,16 +116,6 @@ public class NioSocketChannel extends AbstractNioByteChannel implements io.netty
         this(null, socket);
     }
 
-    /**
-     * Create a new instance
-     *
-     * @param parent    the {@link Channel} which created this instance or {@code null} if it was created by the user
-     * @param socket    the {@link SocketChannel} which will be used
-     */
-    public NioSocketChannel(Channel parent, SocketChannel socket) {
-        super(parent, socket);
-        config = new NioSocketChannelConfig(this, socket.socket());
-    }
 
     @Override
     public ServerSocketChannel parent() {
@@ -121,9 +127,130 @@ public class NioSocketChannel extends AbstractNioByteChannel implements io.netty
         return config;
     }
 
+    /**
+     * 返回 JDK底层的 SocketChannel {@link AbstractNioChannel#javaChannel()}
+     */
     @Override
     protected SocketChannel javaChannel() {
         return (SocketChannel) super.javaChannel();
+    }
+
+    @Override
+    protected void doBind(SocketAddress localAddress) throws Exception {
+        doBind0(localAddress);
+    }
+
+    /**
+     *判断本地Socket地址是否为空，如果不为空则调用java.nio.channels.SocketChannel.socket().bind方法绑定本地地址。
+     * 如果绑定成功，则继续调用java.nio.channels.SocketChannel.connect()发起TCP连接。
+     *  对连接结果进行判断，有三种可能
+     *      连接成功,返回true
+     *      暂时没有连接上，服务端没有返回ACK应答，连接结果不确定，返回false
+     *      连接失败，直接抛出I/O异常
+     */
+    @Override
+    protected boolean doConnect(SocketAddress remoteAddress, SocketAddress localAddress) throws Exception {
+        if (localAddress != null) {
+            doBind0(localAddress);
+        }
+
+        boolean success = false;
+        try {
+            boolean connected = SocketUtils.connect(javaChannel(), remoteAddress);
+            if (!connected) {
+                selectionKey().interestOps(SelectionKey.OP_CONNECT);
+            }
+            success = true;
+            return connected;
+        } finally {
+            if (!success) {
+                doClose();
+            }
+        }
+    }
+
+    private void doBind0(SocketAddress localAddress) throws Exception {
+        if (PlatformDependent.javaVersion() >= 7) {
+            SocketUtils.bind(javaChannel(), localAddress);
+        } else {
+            SocketUtils.bind(javaChannel().socket(), localAddress);
+        }
+    }
+
+    @Override
+    protected void doWrite(ChannelOutboundBuffer in) throws Exception {
+        SocketChannel ch = javaChannel();
+        int writeSpinCount = config().getWriteSpinCount();
+        do {
+            if (in.isEmpty()) {
+                // All written so clear OP_WRITE
+                clearOpWrite();
+                // Directly return here so incompleteWrite(...) is not called.
+                return;
+            }
+
+            // Ensure the pending writes are made of ByteBufs only.
+            int maxBytesPerGatheringWrite = ((NioSocketChannelConfig) config).getMaxBytesPerGatheringWrite();
+            ByteBuffer[] nioBuffers = in.nioBuffers(1024, maxBytesPerGatheringWrite);
+            int nioBufferCnt = in.nioBufferCount();
+
+            // Always us nioBuffers() to workaround data-corruption.
+            // See https://github.com/netty/netty/issues/2761
+            switch (nioBufferCnt) {
+                case 0:
+                    // We have something else beside ByteBuffers to write so fallback to normal writes.
+                    writeSpinCount -= doWrite0(in);
+                    break;
+                case 1: {
+                    // Only one ByteBuf so use non-gathering write
+                    // Zero length buffers are not added to nioBuffers by ChannelOutboundBuffer, so there is no need
+                    // to check if the total size of all the buffers is non-zero.
+                    ByteBuffer buffer = nioBuffers[0];
+                    int attemptedBytes = buffer.remaining();
+                    final int localWrittenBytes = ch.write(buffer);
+                    if (localWrittenBytes <= 0) {
+                        incompleteWrite(true);
+                        return;
+                    }
+                    adjustMaxBytesPerGatheringWrite(attemptedBytes, localWrittenBytes, maxBytesPerGatheringWrite);
+                    in.removeBytes(localWrittenBytes);
+                    --writeSpinCount;
+                    break;
+                }
+                default: {
+                    // Zero length buffers are not added to nioBuffers by ChannelOutboundBuffer, so there is no need
+                    // to check if the total size of all the buffers is non-zero.
+                    // We limit the max amount to int above so cast is safe
+                    long attemptedBytes = in.nioBufferSize();
+                    final long localWrittenBytes = ch.write(nioBuffers, 0, nioBufferCnt);
+                    if (localWrittenBytes <= 0) {
+                        incompleteWrite(true);
+                        return;
+                    }
+                    // Casting to int is safe because we limit the total amount of data in the nioBuffers to int above.
+                    adjustMaxBytesPerGatheringWrite((int) attemptedBytes, (int) localWrittenBytes,
+                            maxBytesPerGatheringWrite);
+                    in.removeBytes(localWrittenBytes);
+                    --writeSpinCount;
+                    break;
+                }
+            }
+        } while (writeSpinCount > 0);
+
+        incompleteWrite(writeSpinCount < 0);
+    }
+
+    @Override
+    protected int doReadBytes(ByteBuf byteBuf) throws Exception {
+        final RecvByteBufAllocator.Handle allocHandle = unsafe().recvBufAllocHandle();
+        allocHandle.attemptedBytesRead(byteBuf.writableBytes());
+        return byteBuf.writeBytes(javaChannel(), allocHandle.attemptedBytesRead());
+    }
+
+    @Override
+    protected int doWriteBytes(ByteBuf buf) throws Exception {
+        final int expectedWrittenBytes = buf.readableBytes();
+        return buf.readBytes(javaChannel(), expectedWrittenBytes);
     }
 
     @Override
@@ -295,48 +422,6 @@ public class NioSocketChannel extends AbstractNioByteChannel implements io.netty
     }
 
     @Override
-    protected void doBind(SocketAddress localAddress) throws Exception {
-        doBind0(localAddress);
-    }
-
-    private void doBind0(SocketAddress localAddress) throws Exception {
-        if (PlatformDependent.javaVersion() >= 7) {
-            SocketUtils.bind(javaChannel(), localAddress);
-        } else {
-            SocketUtils.bind(javaChannel().socket(), localAddress);
-        }
-    }
-
-    /**
-     *判断本地Socket地址是否为空，如果不为空则调用java.nio.channels.SocketChannel.socket().bind方法绑定本地地址。
-     * 如果绑定成功，则继续调用java.nio.channels.SocketChannel.connect()发起TCP连接。
-     *  对连接结果进行判断，有三种可能
-     *      连接成功,返回true
-     *      暂时没有连接上，服务端没有返回ACK应答，连接结果不确定，返回false
-     *      连接失败，直接抛出I/O异常
-     */
-    @Override
-    protected boolean doConnect(SocketAddress remoteAddress, SocketAddress localAddress) throws Exception {
-        if (localAddress != null) {
-            doBind0(localAddress);
-        }
-
-        boolean success = false;
-        try {
-            boolean connected = SocketUtils.connect(javaChannel(), remoteAddress);
-            if (!connected) {
-                selectionKey().interestOps(SelectionKey.OP_CONNECT);
-            }
-            success = true;
-            return connected;
-        } finally {
-            if (!success) {
-                doClose();
-            }
-        }
-    }
-
-    @Override
     protected void doFinishConnect() throws Exception {
         if (!javaChannel().finishConnect()) {
             throw new Error();
@@ -352,19 +437,6 @@ public class NioSocketChannel extends AbstractNioByteChannel implements io.netty
     protected void doClose() throws Exception {
         super.doClose();
         javaChannel().close();
-    }
-
-    @Override
-    protected int doReadBytes(ByteBuf byteBuf) throws Exception {
-        final RecvByteBufAllocator.Handle allocHandle = unsafe().recvBufAllocHandle();
-        allocHandle.attemptedBytesRead(byteBuf.writableBytes());
-        return byteBuf.writeBytes(javaChannel(), allocHandle.attemptedBytesRead());
-    }
-
-    @Override
-    protected int doWriteBytes(ByteBuf buf) throws Exception {
-        final int expectedWrittenBytes = buf.readableBytes();
-        return buf.readBytes(javaChannel(), expectedWrittenBytes);
     }
 
     @Override
@@ -386,68 +458,6 @@ public class NioSocketChannel extends AbstractNioByteChannel implements io.netty
         }
     }
 
-    @Override
-    protected void doWrite(ChannelOutboundBuffer in) throws Exception {
-        SocketChannel ch = javaChannel();
-        int writeSpinCount = config().getWriteSpinCount();
-        do {
-            if (in.isEmpty()) {
-                // All written so clear OP_WRITE
-                clearOpWrite();
-                // Directly return here so incompleteWrite(...) is not called.
-                return;
-            }
-
-            // Ensure the pending writes are made of ByteBufs only.
-            int maxBytesPerGatheringWrite = ((NioSocketChannelConfig) config).getMaxBytesPerGatheringWrite();
-            ByteBuffer[] nioBuffers = in.nioBuffers(1024, maxBytesPerGatheringWrite);
-            int nioBufferCnt = in.nioBufferCount();
-
-            // Always us nioBuffers() to workaround data-corruption.
-            // See https://github.com/netty/netty/issues/2761
-            switch (nioBufferCnt) {
-                case 0:
-                    // We have something else beside ByteBuffers to write so fallback to normal writes.
-                    writeSpinCount -= doWrite0(in);
-                    break;
-                case 1: {
-                    // Only one ByteBuf so use non-gathering write
-                    // Zero length buffers are not added to nioBuffers by ChannelOutboundBuffer, so there is no need
-                    // to check if the total size of all the buffers is non-zero.
-                    ByteBuffer buffer = nioBuffers[0];
-                    int attemptedBytes = buffer.remaining();
-                    final int localWrittenBytes = ch.write(buffer);
-                    if (localWrittenBytes <= 0) {
-                        incompleteWrite(true);
-                        return;
-                    }
-                    adjustMaxBytesPerGatheringWrite(attemptedBytes, localWrittenBytes, maxBytesPerGatheringWrite);
-                    in.removeBytes(localWrittenBytes);
-                    --writeSpinCount;
-                    break;
-                }
-                default: {
-                    // Zero length buffers are not added to nioBuffers by ChannelOutboundBuffer, so there is no need
-                    // to check if the total size of all the buffers is non-zero.
-                    // We limit the max amount to int above so cast is safe
-                    long attemptedBytes = in.nioBufferSize();
-                    final long localWrittenBytes = ch.write(nioBuffers, 0, nioBufferCnt);
-                    if (localWrittenBytes <= 0) {
-                        incompleteWrite(true);
-                        return;
-                    }
-                    // Casting to int is safe because we limit the total amount of data in the nioBuffers to int above.
-                    adjustMaxBytesPerGatheringWrite((int) attemptedBytes, (int) localWrittenBytes,
-                            maxBytesPerGatheringWrite);
-                    in.removeBytes(localWrittenBytes);
-                    --writeSpinCount;
-                    break;
-                }
-            }
-        } while (writeSpinCount > 0);
-
-        incompleteWrite(writeSpinCount < 0);
-    }
 
     @Override
     protected AbstractNioUnsafe newUnsafe() {
@@ -458,6 +468,9 @@ public class NioSocketChannel extends AbstractNioByteChannel implements io.netty
         @Override
         protected Executor prepareToClose() {
             try {
+                /**
+                 * 我们需要取消通道的这个键，这样我们就不会在EventLoop旋转中结束，因为我们尝试读或写，直到实际的关闭发生，这可能是以后由于处理延迟。
+                 */
                 if (javaChannel().isOpen() && config().getSoLinger() > 0) {
                     // We need to cancel this key of the channel so we may not end up in a eventloop spin
                     // because we try to read or write until the actual close happens which may be later due
@@ -477,6 +490,7 @@ public class NioSocketChannel extends AbstractNioByteChannel implements io.netty
 
     private final class NioSocketChannelConfig extends DefaultSocketChannelConfig {
         private volatile int maxBytesPerGatheringWrite = Integer.MAX_VALUE;
+
         private NioSocketChannelConfig(NioSocketChannel channel, Socket javaSocket) {
             super(channel, javaSocket);
             calculateMaxBytesPerGatheringWrite();
