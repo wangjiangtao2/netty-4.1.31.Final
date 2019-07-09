@@ -56,8 +56,6 @@ import static io.netty.channel.internal.ChannelUtils.MAX_BYTES_PER_GATHERING_WRI
  *
  * 代表异步的客户端 TCP Socket 连接
  *
- * doConnect()
- * doWrite()
  */
 public class NioSocketChannel extends AbstractNioByteChannel implements io.netty.channel.socket.SocketChannel {
     private static final InternalLogger logger = InternalLoggerFactory.getInstance(NioSocketChannel.class);
@@ -143,6 +141,17 @@ public class NioSocketChannel extends AbstractNioByteChannel implements io.netty
     }
 
     /**
+     * 绑定端口
+     */
+    private void doBind0(SocketAddress localAddress) throws Exception {
+        if (PlatformDependent.javaVersion() >= 7) {
+            SocketUtils.bind(javaChannel(), localAddress);
+        } else {
+            SocketUtils.bind(javaChannel().socket(), localAddress);
+        }
+    }
+
+    /**
      *判断本地Socket地址是否为空，如果不为空则调用java.nio.channels.SocketChannel.socket().bind方法绑定本地地址。
      * 如果绑定成功，则继续调用java.nio.channels.SocketChannel.connect()发起TCP连接。
      *  对连接结果进行判断，有三种可能
@@ -172,16 +181,7 @@ public class NioSocketChannel extends AbstractNioByteChannel implements io.netty
         }
     }
 
-    /**
-     * 绑定端口
-     */
-    private void doBind0(SocketAddress localAddress) throws Exception {
-        if (PlatformDependent.javaVersion() >= 7) {
-            SocketUtils.bind(javaChannel(), localAddress);
-        } else {
-            SocketUtils.bind(javaChannel().socket(), localAddress);
-        }
-    }
+
 
     @Override
     protected void doWrite(ChannelOutboundBuffer in) throws Exception {
@@ -276,8 +276,6 @@ public class NioSocketChannel extends AbstractNioByteChannel implements io.netty
     public InetSocketAddress remoteAddress() {
         return (InetSocketAddress) super.remoteAddress();
     }
-
-
 
     @Override
     public boolean isOutputShutdown() {
