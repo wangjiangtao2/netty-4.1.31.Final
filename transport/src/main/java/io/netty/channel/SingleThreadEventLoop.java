@@ -72,7 +72,7 @@ public abstract class SingleThreadEventLoop extends SingleThreadEventExecutor im
 
     @Override
     public ChannelFuture register(Channel channel) {
-        // channel 就是 NioServerSocketChannel ; this 就是分配的 NioeventLoop 线程
+        // channel 就是 NioServerSocketChannel/NioSocketChannel ; this 就是分配的 NioeventLoop 线程
         return register(new DefaultChannelPromise(channel, this));
     }
 
@@ -82,7 +82,7 @@ public abstract class SingleThreadEventLoop extends SingleThreadEventExecutor im
         /**
          * 调用unsafe的register接口
          *  this 就是分配的 NioeventLoop 线程
-         *  promise.channel()  是 NioServerSocketChannel
+         *  promise.channel()  是 NioServerSocketChannel、NioSocketChannel
          *直到 AbstractChannel 中的 AbstractUnsafe 这个类中的 register 接口
          */
         promise.channel().unsafe().register(this, promise);
