@@ -1403,7 +1403,9 @@ public class DefaultChannelPipeline implements ChannelPipeline {
     //HeadContext是头部节点，outbound类型，用于传播事件和进行一些底层socket操作。
     final class HeadContext extends AbstractChannelHandlerContext
             implements ChannelOutboundHandler, ChannelInboundHandler {
-
+        /**
+         * 实现底层的数据的读写
+         */
         private final Unsafe unsafe;
 
         HeadContext(DefaultChannelPipeline pipeline) {
