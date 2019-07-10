@@ -301,11 +301,21 @@ public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerCh
     }
 
 
-
+    /**
+     * 连接器主要是给 accept 到一个新连接分配到一个NIO线程
+     */
     private static class ServerBootstrapAcceptor extends ChannelInboundHandlerAdapter {
-
+        /**
+         * childGroup是真正负责I/O读写操作的线程组，通过ServerBootstrap的group方法进行设置，用于后续的Channel绑定。childGroup = new NioEventLoopGroup();
+         */
         private final EventLoopGroup childGroup;
+        /**
+         * 处理新连接的handler
+         *
+         * @see ChannelInitializer
+         */
         private final ChannelHandler childHandler;
+        /*客户端的 的options和attrs*/
         private final Entry<ChannelOption<?>, Object>[] childOptions;
         private final Entry<AttributeKey<?>, Object>[] childAttrs;
         private final Runnable enableAutoReadTask;
@@ -345,6 +355,7 @@ public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerCh
             }
 
             try {
+                /*将channel 注册到eventLoop的selector上等操作*/
                 childGroup.register(child).addListener(new ChannelFutureListener() {
                     @Override
                     public void operationComplete(ChannelFuture future) throws Exception {
