@@ -44,7 +44,9 @@ public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerCh
 
     private static final InternalLogger logger = InternalLoggerFactory.getInstance(ServerBootstrap.class);
 
-    //childGroup是真正负责I/O读写操作的线程组，通过ServerBootstrap的group方法进行设置，用于后续的Channel绑定。childGroup = new NioEventLoopGroup();
+    /**
+     * childGroup是真正负责I/O读写操作的线程组，通过ServerBootstrap的group方法进行设置，用于后续的Channel绑定。childGroup = new NioEventLoopGroup();
+     */
     private volatile EventLoopGroup childGroup;
 
     //新连接 的options和attrs
@@ -56,6 +58,7 @@ public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerCh
 
     /**
      * 处理新连接的handler
+     *
      * @see ChannelInitializer
      */
     private volatile ChannelHandler childHandler;
@@ -187,9 +190,9 @@ public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerCh
             currentChildAttrs = childAttrs.entrySet().toArray(newAttrArray(0));
         }
 
-        p.addLast(new ChannelInitializer<Channel>() {
+        ChannelInitializer<Channel> channelInitializer = new ChannelInitializer<Channel>() {
             @Override
-            public void initChannel(final Channel ch) throws Exception {
+            protected void initChannel(Channel ch) throws Exception {
                 final ChannelPipeline pipeline = ch.pipeline();
                 //获取启动器上配置的handler 这个handler就是main函数中的 .handler(new ServerHandler())
                 ChannelHandler handler = config.handler();
@@ -210,7 +213,33 @@ public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerCh
                     }
                 });
             }
-        });
+        };
+        p.addLast(channelInitializer);
+
+       /* p.addLast(new ChannelInitializer<Channel>() {
+            @Override
+            public void initChannel(final Channel ch) throws Exception {
+                final ChannelPipeline pipeline = ch.pipeline();
+                //获取启动器上配置的handler 这个handler就是main函数中的 .handler(new ServerHandler())
+                ChannelHandler handler = config.handler();
+                if (handler != null) {
+                    // 添加 handler 到 pipeline 中
+                    pipeline.addLast(handler);
+                }
+                ch.eventLoop().execute(new Runnable() {
+                    @Override
+                    public void run() {
+                        *//**
+         * 用child相关的参数创建出一个新连接接入器ServerBootstrapAcceptor
+         * 通过 ServerBootstrapAcceptor 可以将一个新连接绑定到一个线程上去
+         *  每次有新的连接进来 ServerBootstrapAcceptor 都会用child相关的属性对它们进行配置，并注册到ChaildGroup上去
+         *//*
+                        pipeline.addLast(new ServerBootstrapAcceptor(
+                                ch, currentChildGroup, currentChildHandler, currentChildOptions, currentChildAttrs));
+                    }
+                });
+            }
+        });*/
     }
 
     @Override
@@ -235,6 +264,43 @@ public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerCh
     private static Map.Entry<ChannelOption<?>, Object>[] newOptionArray(int size) {
         return new Map.Entry[size];
     }
+
+
+    @Override
+    @SuppressWarnings("CloneDoesntCallSuperClone")
+    public ServerBootstrap clone() {
+        return new ServerBootstrap(this);
+    }
+
+    /**
+     * Return the configured {@link EventLoopGroup} which will be used for the child channels or {@code null}
+     * if non is configured yet.
+     *
+     * @deprecated Use {@link #config()} instead.
+     */
+    @Deprecated
+    public EventLoopGroup childGroup() {
+        return childGroup;
+    }
+
+    final ChannelHandler childHandler() {
+        return childHandler;
+    }
+
+    final Map<ChannelOption<?>, Object> childOptions() {
+        return copiedMap(childOptions);
+    }
+
+    final Map<AttributeKey<?>, Object> childAttrs() {
+        return copiedMap(childAttrs);
+    }
+
+    @Override
+    public final ServerBootstrapConfig config() {
+        return config;
+    }
+
+
 
     private static class ServerBootstrapAcceptor extends ChannelInboundHandlerAdapter {
 
@@ -312,37 +378,4 @@ public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerCh
         }
     }
 
-    @Override
-    @SuppressWarnings("CloneDoesntCallSuperClone")
-    public ServerBootstrap clone() {
-        return new ServerBootstrap(this);
-    }
-
-    /**
-     * Return the configured {@link EventLoopGroup} which will be used for the child channels or {@code null}
-     * if non is configured yet.
-     *
-     * @deprecated Use {@link #config()} instead.
-     */
-    @Deprecated
-    public EventLoopGroup childGroup() {
-        return childGroup;
-    }
-
-    final ChannelHandler childHandler() {
-        return childHandler;
-    }
-
-    final Map<ChannelOption<?>, Object> childOptions() {
-        return copiedMap(childOptions);
-    }
-
-    final Map<AttributeKey<?>, Object> childAttrs() {
-        return copiedMap(childAttrs);
-    }
-
-    @Override
-    public final ServerBootstrapConfig config() {
-        return config;
-    }
 }

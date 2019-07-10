@@ -141,7 +141,7 @@ public abstract class AbstractNioChannel extends AbstractChannel {
         }
     }
     /**
-     * 将当前Channel注册到eventLoop的多路复用器上,仅仅完成注册操作
+     * 将当前Channel注册到eventLoop的多路复用器selector上,仅仅完成注册操作
      *
      * 如果当前注册返回的selectionKey已经被取消，则抛出CancelledKeyException异常，捕获该异常进行处理。
      * 如果是第一次处理该异常，调用多路复用器的selectNow方法将已经取消的selectionKey从多路复用器中删除掉。操作成功后，将selected置为true，说明之前失效的selectionKey已经被删除掉，

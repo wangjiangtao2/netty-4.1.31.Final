@@ -15,12 +15,14 @@
  */
 package io.netty.channel.nio;
 
+import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelConfig;
 import io.netty.channel.ChannelOutboundBuffer;
 import io.netty.channel.ChannelPipeline;
 import io.netty.channel.RecvByteBufAllocator;
 import io.netty.channel.ServerChannel;
+import io.netty.channel.socket.nio.NioServerSocketChannel;
 
 import java.io.IOException;
 import java.net.PortUnreachableException;
@@ -48,6 +50,10 @@ public abstract class AbstractNioMessageChannel extends AbstractNioChannel {
         return new NioMessageUnsafe();
     }
 
+    /**
+     * 注册一个SelectionKey.OP_ACCEPT
+     * {@link AbstractNioChannel#doBeginRead()}
+     */
     @Override
     protected void doBeginRead() throws Exception {
         if (inputShutdown) {
@@ -76,7 +82,9 @@ public abstract class AbstractNioMessageChannel extends AbstractNioChannel {
             try {
                 try {
                     do {
-                        //NioServerSocketChannel 的doReadMessages方法
+                        /**
+                         * 获取连接{@link NioServerSocketChannel#doReadMessages(java.util.List)}
+                         */
                         int localRead = doReadMessages(readBuf);
                         if (localRead == 0) {
                             break;
@@ -96,6 +104,9 @@ public abstract class AbstractNioMessageChannel extends AbstractNioChannel {
                 for (int i = 0; i < size; i ++) {
                     readPending = false;
                     //最后传播到ServerBootstrap的channelRead方法里(p248)
+                    /**
+                     *最后传播到ServerBootstrap的channelRead方法里 {@link ServerBootstrap.ServerBootstrapAcceptor#channelRead(io.netty.channel.ChannelHandlerContext, java.lang.Object)}
+                     */
                     pipeline.fireChannelRead(readBuf.get(i));
                 }
                 readBuf.clear();

@@ -51,7 +51,10 @@ import java.util.Map;
 @SuppressWarnings("all")
 public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C extends Channel> implements Cloneable {
 
-    //bossGroup线程组实际就是Acceptor线程池，负责处理客户端的TCP连接请求，如果系统只有一个服务端端口需要监听，则建议bossGroup线程组线程数设置为1。 parentGroup = new NioEventLoopGroup(1);
+    /**
+     * bossGroup线程组实际就是Acceptor线程池，负责处理客户端的TCP连接请求，如果系统只有一个服务端端口需要监听，则建议bossGroup线程组线程数设置为1。
+     * parentGroup = new NioEventLoopGroup(1);
+     */
     volatile EventLoopGroup group;
 
     @SuppressWarnings("deprecation")
@@ -62,7 +65,10 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
     //服务端handler new ServerHandler()
     private volatile ChannelHandler handler;
 
-    //工厂(ReflectiveChannelFactory) 反射创建类<NioServerSocketChannel/NioSocketChannel>
+    /**
+     * 工厂(ReflectiveChannelFactory) 反射创建类<NioServerSocketChannel/NioSocketChannel>
+     * {@link ReflectiveChannelFactory}
+     */
     private volatile ChannelFactory<? extends C> channelFactory;
 
     private volatile SocketAddress localAddress;
@@ -99,11 +105,6 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
         return self();
     }
 
-    @SuppressWarnings("unchecked")
-    private B self() {
-        return (B) this;
-    }
-
     /**
      * The {@link Class} which is used to create {@link Channel} instances from.
      * You either use this or {@link #channelFactory(io.netty.channel.ChannelFactory)} if your
@@ -114,63 +115,6 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
             throw new NullPointerException("channelClass");
         }
         return channelFactory(new ReflectiveChannelFactory<C>(channelClass));
-    }
-
-    /**
-     * @deprecated Use {@link #channelFactory(io.netty.channel.ChannelFactory)} instead.
-     */
-    @Deprecated
-    public B channelFactory(ChannelFactory<? extends C> channelFactory) {
-        if (channelFactory == null) {
-            throw new NullPointerException("channelFactory");
-        }
-        if (this.channelFactory != null) {
-            throw new IllegalStateException("channelFactory set already");
-        }
-
-        this.channelFactory = channelFactory;
-        return self();
-    }
-
-    /**
-     * {@link io.netty.channel.ChannelFactory} which is used to create {@link Channel} instances from
-     * when calling {@link #bind()}. This method is usually only used if {@link #channel(Class)}
-     * is not working for you because of some more complex needs. If your {@link Channel} implementation
-     * has a no-args constructor, its highly recommend to just use {@link #channel(Class)} to
-     * simplify your code.
-     */
-    @SuppressWarnings({ "unchecked", "deprecation" })
-    public B channelFactory(io.netty.channel.ChannelFactory<? extends C> channelFactory) {
-        return channelFactory((ChannelFactory<C>) channelFactory);
-    }
-
-    /**
-     * The {@link SocketAddress} which is used to bind the local "end" to.
-     */
-    public B localAddress(SocketAddress localAddress) {
-        this.localAddress = localAddress;
-        return self();
-    }
-
-    /**
-     * @see #localAddress(SocketAddress)
-     */
-    public B localAddress(int inetPort) {
-        return localAddress(new InetSocketAddress(inetPort));
-    }
-
-    /**
-     * @see #localAddress(SocketAddress)
-     */
-    public B localAddress(String inetHost, int inetPort) {
-        return localAddress(SocketUtils.socketAddress(inetHost, inetPort));
-    }
-
-    /**
-     * @see #localAddress(SocketAddress)
-     */
-    public B localAddress(InetAddress inetHost, int inetPort) {
-        return localAddress(new InetSocketAddress(inetHost, inetPort));
     }
 
     /**
@@ -214,46 +158,14 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
     }
 
     /**
-     * Validate all the parameters. Sub-classes may override this, but should
-     * call the super method in that case.
+     * the {@link ChannelHandler} to use for serving the requests.
      */
-    public B validate() {
-        if (group == null) {
-            throw new IllegalStateException("group not set");
+    public B handler(ChannelHandler handler) {
+        if (handler == null) {
+            throw new NullPointerException("handler");
         }
-        if (channelFactory == null) {
-            throw new IllegalStateException("channel or channelFactory not set");
-        }
+        this.handler = handler;
         return self();
-    }
-
-    /**
-     * Returns a deep clone of this bootstrap which has the identical configuration.  This method is useful when making
-     * multiple {@link Channel}s with similar settings.  Please note that this method does not clone the
-     * {@link EventLoopGroup} deeply but shallowly, making the group a shared resource.
-     */
-    @Override
-    @SuppressWarnings("CloneDoesntDeclareCloneNotSupportedException")
-    public abstract B clone();
-
-    /**
-     * Create a new {@link Channel} and register it with an {@link EventLoop}.
-     */
-    public ChannelFuture register() {
-        validate();
-        return initAndRegister();
-    }
-
-    /**
-     * Create a new {@link Channel} and bind it.
-     */
-    public ChannelFuture bind() {
-        validate();
-        SocketAddress localAddress = this.localAddress;
-        if (localAddress == null) {
-            throw new IllegalStateException("localAddress not set");
-        }
-        return doBind(localAddress);
     }
 
     /**
@@ -261,20 +173,6 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
      */
     public ChannelFuture bind(int inetPort) {
         return bind(new InetSocketAddress(inetPort));
-    }
-
-    /**
-     * Create a new {@link Channel} and bind it.
-     */
-    public ChannelFuture bind(String inetHost, int inetPort) {
-        return bind(SocketUtils.socketAddress(inetHost, inetPort));
-    }
-
-    /**
-     * Create a new {@link Channel} and bind it.
-     */
-    public ChannelFuture bind(InetAddress inetHost, int inetPort) {
-        return bind(new InetSocketAddress(inetHost, inetPort));
     }
 
     /**
@@ -288,9 +186,10 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
         return doBind(localAddress);
     }
 
+
     //创建、初始化、注册、绑定 channel
     private ChannelFuture doBind(final SocketAddress localAddress) {
-        
+
         // 1 创建 、初始化、注册服务端 channel(NioServerSocketChannel)
         final ChannelFuture regFuture = initAndRegister();
 
@@ -328,6 +227,7 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
             return promise;
         }
     }
+
     // 创建 、初始化、注册服务端 channel(NioServerSocketChannel)
     final ChannelFuture initAndRegister() {
         Channel channel = null;
@@ -381,6 +281,14 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
 
     abstract void init(Channel channel) throws Exception;
 
+    /**
+     * Create a new {@link Channel} and register it with an {@link EventLoop}.
+     */
+    public ChannelFuture register() {
+        validate();
+        return initAndRegister();
+    }
+
     private static void doBind0(
             final ChannelFuture regFuture, final Channel channel,
             final SocketAddress localAddress, final ChannelPromise promise) {
@@ -401,16 +309,145 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
         });
     }
 
-    /**
-     * the {@link ChannelHandler} to use for serving the requests.
-     */
-    public B handler(ChannelHandler handler) {
-        if (handler == null) {
-            throw new NullPointerException("handler");
+    static void setChannelOptions(
+            Channel channel, Map<ChannelOption<?>, Object> options, InternalLogger logger) {
+        for (Map.Entry<ChannelOption<?>, Object> e : options.entrySet()) {
+            setChannelOption(channel, e.getKey(), e.getValue(), logger);
         }
-        this.handler = handler;
+    }
+
+    static void setChannelOptions(
+            Channel channel, Map.Entry<ChannelOption<?>, Object>[] options, InternalLogger logger) {
+        for (Map.Entry<ChannelOption<?>, Object> e : options) {
+            setChannelOption(channel, e.getKey(), e.getValue(), logger);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void setChannelOption(
+            Channel channel, ChannelOption<?> option, Object value, InternalLogger logger) {
+        try {
+            if (!channel.config().setOption((ChannelOption<Object>) option, value)) {
+                logger.warn("Unknown channel option '{}' for channel '{}'", option, channel);
+            }
+        } catch (Throwable t) {
+            logger.warn(
+                    "Failed to set channel option '{}' with value '{}' for channel '{}'", option, value, channel, t);
+        }
+    }
+
+
+    @SuppressWarnings("unchecked")
+    private B self() {
+        return (B) this;
+    }
+
+    /**
+     * @deprecated Use {@link #channelFactory(io.netty.channel.ChannelFactory)} instead.
+     */
+    @Deprecated
+    public B channelFactory(ChannelFactory<? extends C> channelFactory) {
+        if (channelFactory == null) {
+            throw new NullPointerException("channelFactory");
+        }
+        if (this.channelFactory != null) {
+            throw new IllegalStateException("channelFactory set already");
+        }
+
+        this.channelFactory = channelFactory;
         return self();
     }
+
+    /**
+     * {@link io.netty.channel.ChannelFactory} which is used to create {@link Channel} instances from
+     * when calling {@link #bind()}. This method is usually only used if {@link #channel(Class)}
+     * is not working for you because of some more complex needs. If your {@link Channel} implementation
+     * has a no-args constructor, its highly recommend to just use {@link #channel(Class)} to
+     * simplify your code.
+     */
+    @SuppressWarnings({"unchecked", "deprecation"})
+    public B channelFactory(io.netty.channel.ChannelFactory<? extends C> channelFactory) {
+        return channelFactory((ChannelFactory<C>) channelFactory);
+    }
+
+    /**
+     * The {@link SocketAddress} which is used to bind the local "end" to.
+     */
+    public B localAddress(SocketAddress localAddress) {
+        this.localAddress = localAddress;
+        return self();
+    }
+
+    /**
+     * @see #localAddress(SocketAddress)
+     */
+    public B localAddress(int inetPort) {
+        return localAddress(new InetSocketAddress(inetPort));
+    }
+
+    /**
+     * @see #localAddress(SocketAddress)
+     */
+    public B localAddress(String inetHost, int inetPort) {
+        return localAddress(SocketUtils.socketAddress(inetHost, inetPort));
+    }
+
+    /**
+     * @see #localAddress(SocketAddress)
+     */
+    public B localAddress(InetAddress inetHost, int inetPort) {
+        return localAddress(new InetSocketAddress(inetHost, inetPort));
+    }
+
+    /**
+     * Validate all the parameters. Sub-classes may override this, but should
+     * call the super method in that case.
+     */
+    public B validate() {
+        if (group == null) {
+            throw new IllegalStateException("group not set");
+        }
+        if (channelFactory == null) {
+            throw new IllegalStateException("channel or channelFactory not set");
+        }
+        return self();
+    }
+
+    /**
+     * Returns a deep clone of this bootstrap which has the identical configuration.  This method is useful when making
+     * multiple {@link Channel}s with similar settings.  Please note that this method does not clone the
+     * {@link EventLoopGroup} deeply but shallowly, making the group a shared resource.
+     */
+    @Override
+    @SuppressWarnings("CloneDoesntDeclareCloneNotSupportedException")
+    public abstract B clone();
+
+    /**
+     * Create a new {@link Channel} and bind it.
+     */
+    public ChannelFuture bind() {
+        validate();
+        SocketAddress localAddress = this.localAddress;
+        if (localAddress == null) {
+            throw new IllegalStateException("localAddress not set");
+        }
+        return doBind(localAddress);
+    }
+
+    /**
+     * Create a new {@link Channel} and bind it.
+     */
+    public ChannelFuture bind(String inetHost, int inetPort) {
+        return bind(SocketUtils.socketAddress(inetHost, inetPort));
+    }
+
+    /**
+     * Create a new {@link Channel} and bind it.
+     */
+    public ChannelFuture bind(InetAddress inetHost, int inetPort) {
+        return bind(new InetSocketAddress(inetHost, inetPort));
+    }
+
 
     /**
      * Returns the configured {@link EventLoopGroup} or {@code null} if non is configured yet.
@@ -468,40 +505,14 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
         return copiedMap(attrs);
     }
 
-    static void setChannelOptions(
-            Channel channel, Map<ChannelOption<?>, Object> options, InternalLogger logger) {
-        for (Map.Entry<ChannelOption<?>, Object> e: options.entrySet()) {
-            setChannelOption(channel, e.getKey(), e.getValue(), logger);
-        }
-    }
-
-    static void setChannelOptions(
-            Channel channel, Map.Entry<ChannelOption<?>, Object>[] options, InternalLogger logger) {
-        for (Map.Entry<ChannelOption<?>, Object> e: options) {
-            setChannelOption(channel, e.getKey(), e.getValue(), logger);
-        }
-    }
-
-    @SuppressWarnings("unchecked")
-    private static void setChannelOption(
-            Channel channel, ChannelOption<?> option, Object value, InternalLogger logger) {
-        try {
-            if (!channel.config().setOption((ChannelOption<Object>) option, value)) {
-                logger.warn("Unknown channel option '{}' for channel '{}'", option, channel);
-            }
-        } catch (Throwable t) {
-            logger.warn(
-                    "Failed to set channel option '{}' with value '{}' for channel '{}'", option, value, channel, t);
-        }
-    }
-
     @Override
     public String toString() {
         StringBuilder buf = new StringBuilder()
-            .append(StringUtil.simpleClassName(this))
-            .append('(').append(config()).append(')');
+                .append(StringUtil.simpleClassName(this))
+                .append('(').append(config()).append(')');
         return buf.toString();
     }
+
 
     static final class PendingRegistrationPromise extends DefaultChannelPromise {
 

@@ -707,6 +707,62 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
         private boolean neverRegistered = true;
 
         /**
+         * 绑定指定的端口，对于服务端，用户绑定监听端口，可以设置backlog参数；
+         * 对于客户端，用于指定客户端Channel的本地绑定Socket地址
+         */
+        @Override
+        public final void bind(final SocketAddress localAddress, final ChannelPromise promise) {
+            assertEventLoop();
+
+            if (!promise.setUncancellable() || !ensureOpen(promise)) {
+                return;
+            }
+
+            // See: https://github.com/netty/netty/issues/576
+            if (Boolean.TRUE.equals(config().getOption(ChannelOption.SO_BROADCAST)) &&
+                    localAddress instanceof InetSocketAddress &&
+                    !((InetSocketAddress) localAddress).getAddress().isAnyLocalAddress() &&
+                    !PlatformDependent.isWindows() && !PlatformDependent.maybeSuperUser()) {
+                // Warn a user about the fact that a non-root user can't receive a
+                // broadcast packet on *nix if the socket is bound on non-wildcard address.
+                logger.warn(
+                        "A non-root user can't receive a broadcast packet if the socket " +
+                                "is not bound to a wildcard address; binding to a non-wildcard " +
+                                "address (" + localAddress + ") anyway as requested.");
+            }
+
+            // wasActive 在绑定成功前为 false
+            boolean wasActive = isActive();
+            try {
+                /**调用JDK底层API进行端口绑定
+                 *
+                 * 客户端调用NioServerSocketChannel的doBind方法  {@link NioSocketChannel#doBind(java.net.SocketAddress)}
+                 * 服务端调用 NioSocketChannel的doBind方法  {@link NioServerSocketChannel#doBind(java.net.SocketAddress)}
+                 */
+                doBind(localAddress);
+            } catch (Throwable t) {
+                safeSetFailure(promise, t);
+                closeIfClosed();
+                return;
+            }
+
+            //完成绑定之后，isActive() 返回true
+            if (!wasActive && isActive()) {
+                invokeLater(new Runnable() {
+                    //process  查看 DefaultChannelPipeline的  channelActive(ChannelHandlerContext ctx) p1425
+                    @Override
+                    public void run() {
+                        // 触发channelActive事件
+                        pipeline.fireChannelActive();
+                    }
+                });
+            }
+            //将Promis设置为成功
+            safeSetSuccess(promise);
+        }
+
+
+        /**
          * 将当前Unsafe对应的Channel注册到EventLoop的多路复用器上，然后调用DefaultChannelPipeline的fireChannelRegistered方法
          * 如果Channel被激活，则调用DefaultChannelPipeline的fireChannelActive方法
          */
@@ -765,7 +821,10 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
                     return;
                 }
                 boolean firstRegistration = neverRegistered;
-                /** 由AbstractNioChannel类的 内部类AbstractNioUnsafe 实现
+                /**
+                 * 将当前Channel注册到eventLoop的多路复用器selector上
+                 *
+                 * 由AbstractNioChannel类的 内部类AbstractNioUnsafe 实现
                  * 调用子类去实现 {@link AbstractNioChannel#doRegister()}
                  */
                 doRegister();
@@ -805,60 +864,7 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
             }
         }
 
-        /**
-         * 绑定指定的端口，对于服务端，用户绑定监听端口，可以设置backlog参数；
-         * 对于客户端，用于指定客户端Channel的本地绑定Socket地址
-         */
-        @Override
-        public final void bind(final SocketAddress localAddress, final ChannelPromise promise) {
-            assertEventLoop();
 
-            if (!promise.setUncancellable() || !ensureOpen(promise)) {
-                return;
-            }
-
-            // See: https://github.com/netty/netty/issues/576
-            if (Boolean.TRUE.equals(config().getOption(ChannelOption.SO_BROADCAST)) &&
-                    localAddress instanceof InetSocketAddress &&
-                    !((InetSocketAddress) localAddress).getAddress().isAnyLocalAddress() &&
-                    !PlatformDependent.isWindows() && !PlatformDependent.maybeSuperUser()) {
-                // Warn a user about the fact that a non-root user can't receive a
-                // broadcast packet on *nix if the socket is bound on non-wildcard address.
-                logger.warn(
-                        "A non-root user can't receive a broadcast packet if the socket " +
-                                "is not bound to a wildcard address; binding to a non-wildcard " +
-                                "address (" + localAddress + ") anyway as requested.");
-            }
-
-            // wasActive 在绑定成功前为 false
-            boolean wasActive = isActive();
-            try {
-                /**调用JDK底层API进行端口绑定
-                 *
-                 * 客户端调用NioServerSocketChannel的doBind方法  {@link NioSocketChannel#doBind(java.net.SocketAddress)}
-                 * 服务端调用 NioSocketChannel的doBind方法  {@link NioServerSocketChannel#doBind(java.net.SocketAddress)}
-                 */
-                doBind(localAddress);
-            } catch (Throwable t) {
-                safeSetFailure(promise, t);
-                closeIfClosed();
-                return;
-            }
-
-            //完成绑定之后，isActive() 返回true
-            if (!wasActive && isActive()) {
-                invokeLater(new Runnable() {
-                    //process  查看 DefaultChannelPipeline的  channelActive(ChannelHandlerContext ctx) p1425
-                    @Override
-                    public void run() {
-                        // 触发channelActive事件
-                        pipeline.fireChannelActive();
-                    }
-                });
-            }
-            //将Promis设置为成功
-            safeSetSuccess(promise);
-        }
 
         @Override
         public final void beginRead() {
@@ -1089,10 +1095,6 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
                 }
             });
         }
-
-
-
-
 
         private void assertEventLoop() {
             assert !registered || eventLoop.inEventLoop();
