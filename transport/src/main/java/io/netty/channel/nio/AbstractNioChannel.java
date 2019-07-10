@@ -182,7 +182,7 @@ public abstract class AbstractNioChannel extends AbstractChannel {
     }
 
     /**
-     * 注册一个OP_ACCEPT
+     * 注册一个SelectionKey.OP_ACCEPT |  SelectionKey.OP_READ
      * 准备处理读操作之前需要设置网络操作位为读
      */
     @Override

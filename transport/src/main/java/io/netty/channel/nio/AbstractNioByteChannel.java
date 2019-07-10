@@ -172,17 +172,6 @@ public abstract class AbstractNioByteChannel extends AbstractNioChannel {
         incompleteWrite(writeSpinCount < 0);
     }
 
-
-
-
-
-
-
-
-
-
-
-
     protected boolean isInputShutdown0() {
         return false;
     }
