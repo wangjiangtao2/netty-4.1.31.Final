@@ -113,6 +113,12 @@ public abstract class ChannelInitializer<C extends Channel> extends ChannelInbou
         }
     }
 
+    /**
+     * 初始化channel， 之后再删除该channeler(在finally中)
+     * @param ctx
+     * @return
+     * @throws Exception
+     */
     @SuppressWarnings("unchecked")
     private boolean initChannel(ChannelHandlerContext ctx) throws Exception {
        // 标记ctx为true,且之前没有标记过。防止重复执行

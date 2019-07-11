@@ -97,7 +97,7 @@ abstract class AbstractChannelHandlerContext extends DefaultAttributeMap
         this.name = ObjectUtil.checkNotNull(name, "name");
         // 绑定pipeline
         this.pipeline = pipeline;
-        // 绑定executor(这里为null)
+        // 绑定executor(TailContext|HeadContext传null)
         this.executor = executor;
         // 如果节点为inbound类型就设置为true
         this.inbound = inbound;
