@@ -936,6 +936,9 @@ public class DefaultChannelPipeline implements ChannelPipeline {
         return buf.toString();
     }
 
+
+
+
     @Override
     public final ChannelPipeline fireChannelRegistered() {
         AbstractChannelHandlerContext.invokeChannelRegistered(head);
