@@ -58,6 +58,9 @@ public final class NioEventLoop extends SingleThreadEventLoop {
 
     private static final int CLEANUP_INTERVAL = 256; // XXX Hard-coded value, but won't need customization.
 
+    /**
+     * 是否开启  通过反射方式对selector key 优化
+     */
     private static final boolean DISABLE_KEYSET_OPTIMIZATION =
             SystemPropertyUtil.getBoolean("io.netty.noKeySetOptimization", false);
 
@@ -66,21 +69,43 @@ public final class NioEventLoop extends SingleThreadEventLoop {
 
 
     /**
-     * The NIO {@link Selector}.
+     * 若开启优化，则就是优化过的selector
+     * 构造器时候赋值
      */
-    //构造器时候赋值
     private Selector selector;
-    //构造器时候赋值
+
+    /**
+     * 构造器时候赋值,原生selector
+     * The NIO {@link Selector}
+     */
     private Selector unwrappedSelector;
 
-    // 通过优化， 反射赋值
+    /**
+     * 通过优化,反射赋值
+     */
     private SelectedSelectionKeySet selectedKeys;
 
-    //构造器时候赋值
+    /**
+     * 构造器时候赋值
+     */
     private final SelectorProvider provider;
 
-    //选择策略 构造器时候赋值
+    /**
+     * 选择策略 构造器时候赋值
+     */
     private final SelectStrategy selectStrategy;
+
+    /**
+     * Boolean that controls determines if a blocked Selector.select should
+     * break out of its selection process. In our case we use a timeout for
+     * the select method and the select method will block for that time unless
+     * waken up.
+     */
+    private final AtomicBoolean wakenUp = new AtomicBoolean();
+
+    private volatile int ioRatio = 50;
+    private int cancelledKeys;
+    private boolean needsToSelectAgain;
 
 
     private final IntSupplier selectNowSupplier = new IntSupplier() {
@@ -124,20 +149,6 @@ public final class NioEventLoop extends SingleThreadEventLoop {
             logger.debug("-Dio.netty.selectorAutoRebuildThreshold: {}", SELECTOR_AUTO_REBUILD_THRESHOLD);
         }
     }
-
-
-
-    /**
-     * Boolean that controls determines if a blocked Selector.select should
-     * break out of its selection process. In our case we use a timeout for
-     * the select method and the select method will block for that time unless
-     * waken up.
-     */
-    private final AtomicBoolean wakenUp = new AtomicBoolean();
-
-    private volatile int ioRatio = 50;
-    private int cancelledKeys;
-    private boolean needsToSelectAgain;
 
     NioEventLoop(NioEventLoopGroup parent, Executor executor, SelectorProvider selectorProvider,
                  SelectStrategy strategy, RejectedExecutionHandler rejectedExecutionHandler) {

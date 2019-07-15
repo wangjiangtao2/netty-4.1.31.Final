@@ -943,7 +943,9 @@ public abstract class SingleThreadEventExecutor extends AbstractScheduledEventEx
                 // 更新最近一次任务的执行时间
                 updateLastExecutionTime();
                 try {
-                    // 往下调用 NioEventLoop 的 run 方法
+                    /**往下调用 NioEventLoop 的 run 方法,启动线程
+                     * {@link io.netty.channel.nio.NioEventLoop#run()}
+                     */
                     SingleThreadEventExecutor.this.run();
                     success = true;
                 } catch (Throwable t) {

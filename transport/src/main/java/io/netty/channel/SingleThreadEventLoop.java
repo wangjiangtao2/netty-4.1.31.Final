@@ -15,6 +15,7 @@
  */
 package io.netty.channel;
 
+import io.netty.channel.nio.NioEventLoop;
 import io.netty.util.concurrent.RejectedExecutionHandler;
 import io.netty.util.concurrent.RejectedExecutionHandlers;
 import io.netty.util.concurrent.SingleThreadEventExecutor;
@@ -57,6 +58,10 @@ public abstract class SingleThreadEventLoop extends SingleThreadEventExecutor im
                                     boolean addTaskWakesUp, int maxPendingTasks,
                                     RejectedExecutionHandler rejectedExecutionHandler) {
         super(parent, executor, addTaskWakesUp, maxPendingTasks, rejectedExecutionHandler);
+        /**
+         * 创建MPSC队列(多个生产者对单个消费者（无锁、有界和无界都有实现)
+         * {@link NioEventLoop#newTaskQueue(int)}
+         */
         tailTasks = newTaskQueue(maxPendingTasks);
     }
 

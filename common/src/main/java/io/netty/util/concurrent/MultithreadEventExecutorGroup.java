@@ -30,13 +30,16 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public abstract class MultithreadEventExecutorGroup extends AbstractEventExecutorGroup {
 
-    //NioEventLoop 的线程组，已经初始化,selector，provider，taskQueue(MPSC)，executor等
+    //NioEventLoop 的线程组，已经初始化,selector，provider，taskQueue(MPSC)，executor 等
     private final EventExecutor[] children;
     private final Set<EventExecutor> readonlyChildren;
     private final AtomicInteger terminatedChildren = new AtomicInteger();
     private final Promise<?> terminationFuture = new DefaultPromise(GlobalEventExecutor.INSTANCE);
 
-    //线程选择器 PowerOfTwoEventExecutorChooser/GenericEventExecutorChooser
+    /**
+     * 线程选择器 PowerOfTwoEventExecutorChooser/GenericEventExecutorChooser
+     * {@link DefaultEventExecutorChooserFactory}
+     */
     private final EventExecutorChooserFactory.EventExecutorChooser chooser;
 
     /**

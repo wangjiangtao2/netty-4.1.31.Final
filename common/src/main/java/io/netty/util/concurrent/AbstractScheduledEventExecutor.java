@@ -240,6 +240,9 @@ public abstract class AbstractScheduledEventExecutor extends AbstractEventExecut
             // 添加定时任务队列
             scheduledTaskQueue().add(task);
         } else {
+            /**
+             * {@link SingleThreadEventExecutor#execute(java.lang.Runnable)}
+             */
             execute(new Runnable() {
                 @Override
                 public void run() {
