@@ -80,7 +80,7 @@ public abstract class MultithreadEventExecutorGroup extends AbstractEventExecuto
 
         /**
          *  线程创建器(FastThreadLocalThread线程), 指定每个线程有固定前缀prefix，daemon，priority，threadGroup
-         *  详情请看DefaultThreadFactory的newThread(Runnable r)方法 创建 FastThreadLocalThread线程
+         *  详情请看DefaultThreadFactory的newThread(Runnable r)方法 创建 FastThreadLocalThread线程 {@link DefaultThreadFactory#newThread(java.lang.Runnable)}
          */
         if (executor == null) {
             executor = new ThreadPerTaskExecutor(newDefaultThreadFactory());
