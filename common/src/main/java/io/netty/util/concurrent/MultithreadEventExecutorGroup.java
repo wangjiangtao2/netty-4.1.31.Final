@@ -97,7 +97,10 @@ public abstract class MultithreadEventExecutorGroup extends AbstractEventExecuto
         for (int i = 0; i < nThreads; i++) {
             boolean success = false;
             try {
-                //newChild(executor, args) 函数在NioEventLoopGroup类中实现了, 实质就是就是存入了一个 NIOEventLoop类实例
+                /**
+                 * newChild(executor, args) 实质就是就是存入了一个 NIOEventLoop类实例
+                 * {@link io.netty.channel.nio.NioEventLoopGroup#newChild(java.util.concurrent.Executor, java.lang.Object...)}
+                 */
                 children[i] = newChild(executor, args);
                 success = true;
             } catch (Exception e) {
@@ -125,11 +128,17 @@ public abstract class MultithreadEventExecutorGroup extends AbstractEventExecuto
                 }
             }
         }
-        /** 2.实例化线程工厂执行器选择器: 根据children获取选择器 */
-        //线程选择器，如果是偶数个线程数，netty对其优化了，默认是从children中轮询选择
+
+
+        /**
+         * 2.实例化线程工厂执行器选择器: 根据children获取选择器
+         *
+         * 线程选择器，如果是偶数个线程数，netty对其优化了，默认是从children中轮询选择
+         * {@link DefaultEventExecutorChooserFactory}
+         * */
         chooser = chooserFactory.newChooser(children);
 
-/** 3.为每个EventLoop线程添加 线程终止监听器*/
+         /** 3.为每个EventLoop线程添加 线程终止监听器*/
         final FutureListener<Object> terminationListener = new FutureListener<Object>() {
             @Override
             public void operationComplete(Future<Object> future) throws Exception {
@@ -142,7 +151,7 @@ public abstract class MultithreadEventExecutorGroup extends AbstractEventExecuto
             e.terminationFuture().addListener(terminationListener);
         }
 
-/** 4. 将children 添加到对应的set集合中去重， 表示只可读。*/
+        /** 4. 将children 添加到对应的set集合中去重， 表示只可读。*/
         Set<EventExecutor> childrenSet = new LinkedHashSet<EventExecutor>(children.length);
         Collections.addAll(childrenSet, children);
         readonlyChildren = Collections.unmodifiableSet(childrenSet);
