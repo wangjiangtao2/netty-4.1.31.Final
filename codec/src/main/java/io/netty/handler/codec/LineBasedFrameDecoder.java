@@ -26,9 +26,10 @@ import java.util.List;
  * <p>
  * Both {@code "\n"} and {@code "\r\n"} are handled.
  * For a more general delimiter-based decoder, see {@link DelimiterBasedFrameDecoder}.
+ *
+ * 查找ByteBuf中的可读字节是否有 "\n" "\r\n",如果有，就以此位置为结束位置
  */
-@SuppressWarnings("ALL")
-// 查找ByteBuf中的可读字节是否有 "\n" "\r\n",如果有，就以此位置为结束位置
+@SuppressWarnings("all")
 public class LineBasedFrameDecoder extends ByteToMessageDecoder {
 
     /** Maximum length of a frame we're willing to decode.  */
