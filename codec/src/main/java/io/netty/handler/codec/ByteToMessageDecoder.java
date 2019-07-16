@@ -82,11 +82,9 @@ import java.util.List;
  *   4. callDecode
  *   5. decodeRemovalReentryProtection
  *
- * 1.累加数据
- * 2.将累加到的数据传递给业务进行业务拆包
- * 3.清理字节容器
- * 4.传递业务数据包给业务解码器处理
- *
+ * 第一就是累加字节流，netty会通过一个ByteBuf累加器把所有读到的字节流累加到当前累加器，
+ * 第二就是调用子类的decode方法进行解析，就是把从第一个步骤得到的累加器通过子类来解析，
+ * 第三就是将解析到的ByteBuf向下传播。
  */
 @SuppressWarnings("all")
 public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter {
