@@ -89,8 +89,9 @@ public abstract class MultithreadEventExecutorGroup extends AbstractEventExecuto
             executor = new ThreadPerTaskExecutor(newDefaultThreadFactory());
         }
 
-        // 创建 EventExecutor 数组
         /**
+         * 创建 EventExecutor 数组
+         *
          * 这里的children数组， 其实就是线程池的核心实现，线程池中就是通过指定的线程数组来实现线程池；
          * 数组中每个元素其实就是一个EventLoop，EventLoop是EventExecutor的子接口。
          */
@@ -141,7 +142,7 @@ public abstract class MultithreadEventExecutorGroup extends AbstractEventExecuto
          * */
         chooser = chooserFactory.newChooser(children);
 
-         /** 3.为每个EventLoop线程添加 线程终止监听器*/
+        /** 3.为每个EventLoop线程添加 线程终止监听器*/
         final FutureListener<Object> terminationListener = new FutureListener<Object>() {
             @Override
             public void operationComplete(Future<Object> future) throws Exception {
