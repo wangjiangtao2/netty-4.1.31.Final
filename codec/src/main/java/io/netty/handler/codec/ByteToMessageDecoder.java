@@ -89,6 +89,33 @@ import java.util.List;
 @SuppressWarnings("all")
 public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter {
 
+    private static final byte STATE_INIT = 0;
+    private static final byte STATE_CALLING_CHILD_DECODE = 1;
+    private static final byte STATE_HANDLER_REMOVED_PENDING = 2;
+
+    // 用来保存累计读取到的字节
+    ByteBuf cumulation;
+    private Cumulator cumulator = MERGE_CUMULATOR;
+    // 设置为true后，单个解码器只会解码出一个结果
+    private boolean singleDecode;
+    // 解码结果为空
+    private boolean decodeWasNull;
+    // 是否是第一次读取数据
+    private boolean first;
+    /**
+     * A bitmask where the bits are defined as
+     * <ul>
+     *     <li>{@link #STATE_INIT}</li>
+     *     <li>{@link #STATE_CALLING_CHILD_DECODE}</li>
+     *     <li>{@link #STATE_HANDLER_REMOVED_PENDING}</li>
+     * </ul>
+     */
+    private byte decodeState = STATE_INIT;
+    // 多少次读取后，丢弃数据 默认16次
+    private int discardAfterReads = 16;
+    // 已经累加了多少次数据了
+    private int numReads;
+
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
         //只针对ByteBuf进行解码,否则直接透传
@@ -316,32 +343,7 @@ public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter 
         }
     };
 
-    private static final byte STATE_INIT = 0;
-    private static final byte STATE_CALLING_CHILD_DECODE = 1;
-    private static final byte STATE_HANDLER_REMOVED_PENDING = 2;
 
-    // 用来保存累计读取到的字节
-    ByteBuf cumulation;
-    private Cumulator cumulator = MERGE_CUMULATOR;
-    // 设置为true后，单个解码器只会解码出一个结果
-    private boolean singleDecode;
-    // 解码结果为空
-    private boolean decodeWasNull;
-    // 是否是第一次读取数据
-    private boolean first;
-    /**
-     * A bitmask where the bits are defined as
-     * <ul>
-     *     <li>{@link #STATE_INIT}</li>
-     *     <li>{@link #STATE_CALLING_CHILD_DECODE}</li>
-     *     <li>{@link #STATE_HANDLER_REMOVED_PENDING}</li>
-     * </ul>
-     */
-    private byte decodeState = STATE_INIT;
-    // 多少次读取后，丢弃数据 默认16次
-    private int discardAfterReads = 16;
-    // 已经累加了多少次数据了
-    private int numReads;
 
     protected ByteToMessageDecoder() {
         ensureNotSharable();
