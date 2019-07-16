@@ -147,7 +147,7 @@ public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter 
             } catch (Exception e) {
                 throw new DecoderException(e);
             } finally {
-                //如果累计区没有可读字节了 ，则释放cumulation
+                //如果累计区没有可读字节了, 则释放cumulation
                 if (cumulation != null && !cumulation.isReadable()) {
                     // 将次数归零
                     numReads = 0;
@@ -300,6 +300,50 @@ public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter 
             }
         }
     };
+
+
+
+    /**
+     * Decode the from one {@link ByteBuf} to an other. This method will be called till either the input
+     * {@link ByteBuf} has nothing to read when return from this method or till nothing was read from the input
+     * {@link ByteBuf}.
+     *
+     * @param ctx           the {@link ChannelHandlerContext} which this {@link ByteToMessageDecoder} belongs to
+     * @param in            the {@link ByteBuf} from which to read data
+     * @param out           the {@link List} to which decoded messages should be added
+     * @throws Exception    is thrown if an error occurs
+     */
+    final void decodeRemovalReentryProtection(ChannelHandlerContext ctx, ByteBuf in, List<Object> out)
+            throws Exception {
+        //设置解码器正在解码状态，防止解码过程中另一个线程调用 handlerRemoved(ctx)销毁数据
+        decodeState = STATE_CALLING_CHILD_DECODE; //  记录解码状态  decodeState默认是0，赋值为1
+        try {
+            //抽象方法, 子类具体实现解码逻辑
+            decode(ctx, in, out);
+        } finally {
+            //decodeState == STATE_HANDLER_REMOVED_PENDING 表示在解码过程中，有另外的线程把ctx移除了，这是需要由当前线程调用handlerRemoved(ctx)方法来完成数据销毁
+            boolean removePending = decodeState == STATE_HANDLER_REMOVED_PENDING;
+            decodeState = STATE_INIT;
+            if (removePending) {
+                handlerRemoved(ctx);
+            }
+        }
+    }
+
+    /**
+     * Decode the from one {@link ByteBuf} to an other. This method will be called till either the input
+     * {@link ByteBuf} has nothing to read when return from this method or till nothing was read from the input
+     * {@link ByteBuf}.
+     *
+     * @param ctx           the {@link ChannelHandlerContext} which this {@link ByteToMessageDecoder} belongs to
+     * @param in            the {@link ByteBuf} from which to read data
+     * @param out           the {@link List} to which decoded messages should be added
+     * @throws Exception    is thrown if an error occurs
+     */
+    //process 这个方法是唯一的一个需要自己实现的抽象方法，作用是将ByteBuf数据解码成其他形式的数据。
+    protected abstract void decode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) throws Exception;
+
+
 
     /**
      * Cumulate {@link ByteBuf}s by add them to a {@link CompositeByteBuf} and so do no memory copy whenever possible.
@@ -561,45 +605,6 @@ public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter 
     }
 
 
-    /**
-     * Decode the from one {@link ByteBuf} to an other. This method will be called till either the input
-     * {@link ByteBuf} has nothing to read when return from this method or till nothing was read from the input
-     * {@link ByteBuf}.
-     *
-     * @param ctx           the {@link ChannelHandlerContext} which this {@link ByteToMessageDecoder} belongs to
-     * @param in            the {@link ByteBuf} from which to read data
-     * @param out           the {@link List} to which decoded messages should be added
-     * @throws Exception    is thrown if an error occurs
-     */
-    //process 这个方法是唯一的一个需要自己实现的抽象方法，作用是将ByteBuf数据解码成其他形式的数据。
-    protected abstract void decode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) throws Exception;
-
-    /**
-     * Decode the from one {@link ByteBuf} to an other. This method will be called till either the input
-     * {@link ByteBuf} has nothing to read when return from this method or till nothing was read from the input
-     * {@link ByteBuf}.
-     *
-     * @param ctx           the {@link ChannelHandlerContext} which this {@link ByteToMessageDecoder} belongs to
-     * @param in            the {@link ByteBuf} from which to read data
-     * @param out           the {@link List} to which decoded messages should be added
-     * @throws Exception    is thrown if an error occurs
-     */
-    final void decodeRemovalReentryProtection(ChannelHandlerContext ctx, ByteBuf in, List<Object> out)
-            throws Exception {
-        //设置解码器正在解码状态，防止解码过程中另一个线程调用 handlerRemoved(ctx)销毁数据
-        decodeState = STATE_CALLING_CHILD_DECODE; //  记录解码状态  decodeState默认是0，赋值为1
-        try {
-            //抽象方法, 子类具体实现解码逻辑
-            decode(ctx, in, out);
-        } finally {
-            //decodeState == STATE_HANDLER_REMOVED_PENDING 表示在解码过程中，有另外的线程把ctx移除了，这是需要由当前线程调用handlerRemoved(ctx)方法来完成数据销毁
-            boolean removePending = decodeState == STATE_HANDLER_REMOVED_PENDING;
-            decodeState = STATE_INIT;
-            if (removePending) {
-                handlerRemoved(ctx);
-            }
-        }
-    }
 
     /**
      * Is called one last time when the {@link ChannelHandlerContext} goes in-active. Which means the

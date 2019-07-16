@@ -43,11 +43,10 @@ public class FixedLengthFrameDecoder extends ByteToMessageDecoder {
     private final int frameLength;
 
     /**
+     * 构造函数里面把frameLength放进去，表示固定的长度有多长
      * Creates a new instance.
-     *
      * @param frameLength the length of the frame
      */
-    // 构造函数里面把frameLength放进去，表示固定的长度有多长
     public FixedLengthFrameDecoder(int frameLength) {
         if (frameLength <= 0) {
             throw new IllegalArgumentException(
