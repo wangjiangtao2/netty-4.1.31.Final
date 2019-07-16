@@ -16,6 +16,7 @@
 
 package io.netty.bootstrap;
 
+import io.netty.channel.AbstractChannel;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelFutureListener;
@@ -26,10 +27,11 @@ import io.netty.channel.DefaultChannelPromise;
 import io.netty.channel.EventLoop;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.ReflectiveChannelFactory;
-import io.netty.util.internal.SocketUtils;
 import io.netty.util.AttributeKey;
 import io.netty.util.concurrent.EventExecutor;
 import io.netty.util.concurrent.GlobalEventExecutor;
+import io.netty.util.concurrent.SingleThreadEventExecutor;
+import io.netty.util.internal.SocketUtils;
 import io.netty.util.internal.StringUtil;
 import io.netty.util.internal.logging.InternalLogger;
 
@@ -295,12 +297,16 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
 
         // This method is invoked before channelRegistered() is triggered.  Give user handlers a chance to set up
         // the pipeline in its channelRegistered() implementation.
-        // 执行 SingleThreadEventExecutor execute(Runnable task) 的方法
+        /**
+         * NioEventLoop 的启动 {@link SingleThreadEventExecutor#execute(java.lang.Runnable)}
+         */
         channel.eventLoop().execute(new Runnable() {
             @Override
             public void run() {
                 if (regFuture.isSuccess()) {
-                    //process 最终调用AbstractChannel中的 AbstractUnsafe类中的AbstractUnsafe子类的bind方法p550
+                    /**最终调用AbstractChannel中的 AbstractUnsafe类中的AbstractUnsafe子类的bind方法p550
+                     * {@link AbstractChannel.AbstractUnsafe#bind(java.net.SocketAddress, io.netty.channel.ChannelPromise)}
+                     */
                     channel.bind(localAddress, promise).addListener(ChannelFutureListener.CLOSE_ON_FAILURE);
                 } else {
                     promise.setFailure(regFuture.cause());
