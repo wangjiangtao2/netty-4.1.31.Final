@@ -249,6 +249,7 @@ import java.nio.charset.UnsupportedCharsetException;
  *
  * UnpooledHeapByteBuf
  *
+ * 若需详细看方法，可查看Netty实战的5.3.9节
  */
 @SuppressWarnings("ClassMayBeInterface")
 public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
@@ -559,6 +560,7 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * @throws IndexOutOfBoundsException
      *         if the specified {@code index} is less than {@code 0} or
      *         {@code index + 1} is greater than {@code this.capacity}
+     *  返回给定索引处的Boolean值
      */
     public abstract boolean getBoolean(int index);
 
@@ -570,6 +572,7 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * @throws IndexOutOfBoundsException
      *         if the specified {@code index} is less than {@code 0} or
      *         {@code index + 1} is greater than {@code this.capacity}
+     *  返回给定索引处的字节
      */
     public abstract byte  getByte(int index);
 
@@ -581,6 +584,7 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * @throws IndexOutOfBoundsException
      *         if the specified {@code index} is less than {@code 0} or
      *         {@code index + 1} is greater than {@code this.capacity}
+     *  返回给定索引处的无符号字节值作为short返回
      */
     public abstract short getUnsignedByte(int index);
 
@@ -592,6 +596,7 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * @throws IndexOutOfBoundsException
      *         if the specified {@code index} is less than {@code 0} or
      *         {@code index + 2} is greater than {@code this.capacity}
+     * 返回给定索引处的short值
      */
     public abstract short getShort(int index);
 
@@ -614,6 +619,7 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * @throws IndexOutOfBoundsException
      *         if the specified {@code index} is less than {@code 0} or
      *         {@code index + 2} is greater than {@code this.capacity}
+     * 返回给定索引处的无符号short值作为int返回
      */
     public abstract int getUnsignedShort(int index);
 
@@ -637,6 +643,7 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * @throws IndexOutOfBoundsException
      *         if the specified {@code index} is less than {@code 0} or
      *         {@code index + 3} is greater than {@code this.capacity}
+     * 返回给定索引处的24位中的中等int值
      */
     public abstract int   getMedium(int index);
 
@@ -704,6 +711,7 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * @throws IndexOutOfBoundsException
      *         if the specified {@code index} is less than {@code 0} or
      *         {@code index + 4} is greater than {@code this.capacity}
+     * 返回给定索引处的无符号int值作为long返回
      */
     public abstract long  getUnsignedInt(int index);
 
@@ -726,6 +734,7 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * @throws IndexOutOfBoundsException
      *         if the specified {@code index} is less than {@code 0} or
      *         {@code index + 8} is greater than {@code this.capacity}
+     *  返回给定索引处的Long值
      */
     public abstract long  getLong(int index);
 

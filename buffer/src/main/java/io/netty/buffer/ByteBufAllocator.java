@@ -49,7 +49,7 @@ public interface ByteBufAllocator {
 
     /**
      * Allocate a {@link ByteBuf}, preferably a direct buffer which is suitable for I/O.
-     *
+     *返回一个用于套接字的I/O操作的ByteBuf
      */
     ByteBuf ioBuffer();
 
@@ -67,6 +67,7 @@ public interface ByteBufAllocator {
 
     /**
      * Allocate a heap {@link ByteBuf}.
+     * 返回一个基于堆内存存储的ByteBuf
      */
     ByteBuf heapBuffer();
 
@@ -85,6 +86,7 @@ public interface ByteBufAllocator {
 
     /**
      * Allocate a direct {@link ByteBuf}.
+     * 返回一个基于直接内存存储的ByteBuf
      */
     ByteBuf directBuffer();
 
