@@ -95,6 +95,7 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
     /**
      * The {@link EventLoopGroup} which is used to handle all the events for the to-be-created
      * {@link Channel}
+     * 设置用于处理Channel所有事件的EventLoopGroup
      */
     public B group(EventLoopGroup group) {
         if (group == null) {
