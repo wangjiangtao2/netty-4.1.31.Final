@@ -41,6 +41,7 @@ import static io.netty.util.internal.MathUtil.isOutOfBounds;
 
 /**
  * A skeletal implementation of a buffer.
+ * ByteBuf 实现的骨架
  */
 public abstract class AbstractByteBuf extends ByteBuf {
     private static final InternalLogger logger = InternalLoggerFactory.getInstance(AbstractByteBuf.class);
