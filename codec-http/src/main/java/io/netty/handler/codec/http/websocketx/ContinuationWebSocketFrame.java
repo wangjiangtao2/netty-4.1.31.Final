@@ -22,6 +22,7 @@ import io.netty.util.CharsetUtil;
 /**
  * Web Socket continuation frame containing continuation text or binary data. This is used for
  * fragmented messages where the contents of a messages is contained more than 1 frame.
+ * 包含属于上一个BinaryWebSocketFrame或TextWebSocketFrame的文本数据或者二进制数据
  */
 public class ContinuationWebSocketFrame extends WebSocketFrame {
 

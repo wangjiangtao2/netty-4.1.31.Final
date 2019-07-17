@@ -20,6 +20,7 @@ import io.netty.buffer.Unpooled;
 
 /**
  * Web Socket frame containing binary data
+ * 作为一个对于PingWebSocketFrame的响应被发送
  */
 public class PongWebSocketFrame extends WebSocketFrame {
 

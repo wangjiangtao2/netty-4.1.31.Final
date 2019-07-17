@@ -20,6 +20,7 @@ import io.netty.buffer.Unpooled;
 
 /**
  * Web Socket frame containing binary data
+ * 包含了二进制数据
  */
 public class BinaryWebSocketFrame extends WebSocketFrame {
 

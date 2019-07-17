@@ -22,6 +22,7 @@ import io.netty.util.internal.StringUtil;
 
 /**
  * Web Socket Frame for closing the connection
+ * 标识一个CLOSE请求，包含一个关闭的状态码和关闭的原因
  */
 public class CloseWebSocketFrame extends WebSocketFrame {
 
