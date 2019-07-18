@@ -59,8 +59,11 @@ import java.util.concurrent.TimeUnit;
  * bootstrap.childHandler(new MyChannelInitializer());
  * ...
  * </pre>
+ *
  * @see ReadTimeoutHandler
  * @see IdleStateHandler
+ * <p>
+ * 当一个写操作不能在一定的时间内完成时，抛出此异常，并关闭连接。你同样可以在 exceptionCaught 方法中处理这个异常。
  */
 public class WriteTimeoutHandler extends ChannelOutboundHandlerAdapter {
     private static final long MIN_TIMEOUT_NANOS = TimeUnit.MILLISECONDS.toNanos(1);
@@ -77,8 +80,7 @@ public class WriteTimeoutHandler extends ChannelOutboundHandlerAdapter {
     /**
      * Creates a new instance.
      *
-     * @param timeoutSeconds
-     *        write timeout in seconds
+     * @param timeoutSeconds write timeout in seconds
      */
     public WriteTimeoutHandler(int timeoutSeconds) {
         this(timeoutSeconds, TimeUnit.SECONDS);
@@ -87,10 +89,8 @@ public class WriteTimeoutHandler extends ChannelOutboundHandlerAdapter {
     /**
      * Creates a new instance.
      *
-     * @param timeout
-     *        write timeout
-     * @param unit
-     *        the {@link TimeUnit} of {@code timeout}
+     * @param timeout write timeout
+     * @param unit    the {@link TimeUnit} of {@code timeout}
      */
     public WriteTimeoutHandler(long timeout, TimeUnit unit) {
         if (unit == null) {

@@ -41,20 +41,20 @@ import java.util.concurrent.TimeUnit;
  * <tr>
  * <td>{@code readerIdleTime}</td>
  * <td>an {@link IdleStateEvent} whose state is {@link IdleState#READER_IDLE}
- *     will be triggered when no read was performed for the specified period of
- *     time.  Specify {@code 0} to disable.</td>
+ * will be triggered when no read was performed for the specified period of
+ * time.  Specify {@code 0} to disable.</td>
  * </tr>
  * <tr>
  * <td>{@code writerIdleTime}</td>
  * <td>an {@link IdleStateEvent} whose state is {@link IdleState#WRITER_IDLE}
- *     will be triggered when no write was performed for the specified period of
- *     time.  Specify {@code 0} to disable.</td>
+ * will be triggered when no write was performed for the specified period of
+ * time.  Specify {@code 0} to disable.</td>
  * </tr>
  * <tr>
  * <td>{@code allIdleTime}</td>
  * <td>an {@link IdleStateEvent} whose state is {@link IdleState#ALL_IDLE}
- *     will be triggered when neither read nor write was performed for the
- *     specified period of time.  Specify {@code 0} to disable.</td>
+ * will be triggered when neither read nor write was performed for the
+ * specified period of time.  Specify {@code 0} to disable.</td>
  * </tr>
  * </table>
  *
@@ -94,6 +94,8 @@ import java.util.concurrent.TimeUnit;
  *
  * @see ReadTimeoutHandler
  * @see WriteTimeoutHandler
+ * <p>
+ * 当连接的空闲时间（读或者写）太长时，将会触发一个 IdleStateEvent 事件。然后，你可以通过你的 ChannelInboundHandler 中重写 userEventTrigged 方法来处理该事件。
  */
 public class IdleStateHandler extends ChannelDuplexHandler {
     private static final long MIN_TIMEOUT_NANOS = TimeUnit.MILLISECONDS.toNanos(1);
@@ -106,14 +108,35 @@ public class IdleStateHandler extends ChannelDuplexHandler {
             firstWriterIdleEvent = firstAllIdleEvent = true;
         }
     };
-
+    /**
+     * 是否考虑出站时较慢的情况。默认值是false（不考虑）。
+     * <p>
+     * 当你的客户端应用每次接收数据是30秒，而你的写空闲时间是 25 秒，那么，当你数据还没有写出的时候，写空闲时间触发了。实际上是不合乎逻辑的。因为你的应用根本不空闲。
+     * <p>
+     * Netty 的解决方案是：记录最后一次输出消息的相关信息，并使用一个值 firstXXXXIdleEvent 表示是否再次活动过，
+     * 每次读写活动都会将对应的 first 值更新为 true，如果是 false，说明这段时间没有发生过读写事件。同时如果第一次记录出站的相关数据和第二次得到的出站相关数据不同，
+     * 则说明数据在缓慢的出站，就不用触发空闲事件。
+     * <p>
+     * 这个字段就是用来对付 “客户端接收数据奇慢无比，慢到比空闲时间还多” 的极端情况。所以，Netty 默认是关闭这个字段的。
+     */
     private final boolean observeOutput;
+    /**
+     * 读事件空闲时间，0 则禁用事件
+     */
     private final long readerIdleTimeNanos;
+    /**
+     * 写事件空闲时间，0 则禁用事件
+     */
     private final long writerIdleTimeNanos;
+    /**
+     * 读或写空闲时间，0 则禁用事件
+     */
     private final long allIdleTimeNanos;
 
     private ScheduledFuture<?> readerIdleTimeout;
+
     private long lastReadTime;
+
     private boolean firstReaderIdleEvent = true;
 
     private ScheduledFuture<?> writerIdleTimeout;
@@ -123,7 +146,10 @@ public class IdleStateHandler extends ChannelDuplexHandler {
     private ScheduledFuture<?> allIdleTimeout;
     private boolean firstAllIdleEvent = true;
 
-    private byte state; // 0 - none, 1 - initialized, 2 - destroyed
+    /**
+     * 0 - none, 1 - initialized, 2 - destroyed
+     */
+    private byte state;
     private boolean reading;
 
     private long lastChangeCheckTimeStamp;
@@ -133,18 +159,15 @@ public class IdleStateHandler extends ChannelDuplexHandler {
     /**
      * Creates a new instance firing {@link IdleStateEvent}s.
      *
-     * @param readerIdleTimeSeconds
-     *        an {@link IdleStateEvent} whose state is {@link IdleState#READER_IDLE}
-     *        will be triggered when no read was performed for the specified
-     *        period of time.  Specify {@code 0} to disable.
-     * @param writerIdleTimeSeconds
-     *        an {@link IdleStateEvent} whose state is {@link IdleState#WRITER_IDLE}
-     *        will be triggered when no write was performed for the specified
-     *        period of time.  Specify {@code 0} to disable.
-     * @param allIdleTimeSeconds
-     *        an {@link IdleStateEvent} whose state is {@link IdleState#ALL_IDLE}
-     *        will be triggered when neither read nor write was performed for
-     *        the specified period of time.  Specify {@code 0} to disable.
+     * @param readerIdleTimeSeconds an {@link IdleStateEvent} whose state is {@link IdleState#READER_IDLE}
+     *                              will be triggered when no read was performed for the specified
+     *                              period of time.  Specify {@code 0} to disable.
+     * @param writerIdleTimeSeconds an {@link IdleStateEvent} whose state is {@link IdleState#WRITER_IDLE}
+     *                              will be triggered when no write was performed for the specified
+     *                              period of time.  Specify {@code 0} to disable.
+     * @param allIdleTimeSeconds    an {@link IdleStateEvent} whose state is {@link IdleState#ALL_IDLE}
+     *                              will be triggered when neither read nor write was performed for
+     *                              the specified period of time.  Specify {@code 0} to disable.
      */
     public IdleStateHandler(
             int readerIdleTimeSeconds,
@@ -152,7 +175,7 @@ public class IdleStateHandler extends ChannelDuplexHandler {
             int allIdleTimeSeconds) {
 
         this(readerIdleTimeSeconds, writerIdleTimeSeconds, allIdleTimeSeconds,
-             TimeUnit.SECONDS);
+                TimeUnit.SECONDS);
     }
 
     /**
@@ -167,28 +190,23 @@ public class IdleStateHandler extends ChannelDuplexHandler {
     /**
      * Creates a new instance firing {@link IdleStateEvent}s.
      *
-     * @param observeOutput
-     *        whether or not the consumption of {@code bytes} should be taken into
-     *        consideration when assessing write idleness. The default is {@code false}.
-     * @param readerIdleTime
-     *        an {@link IdleStateEvent} whose state is {@link IdleState#READER_IDLE}
-     *        will be triggered when no read was performed for the specified
-     *        period of time.  Specify {@code 0} to disable.
-     * @param writerIdleTime
-     *        an {@link IdleStateEvent} whose state is {@link IdleState#WRITER_IDLE}
-     *        will be triggered when no write was performed for the specified
-     *        period of time.  Specify {@code 0} to disable.
-     * @param allIdleTime
-     *        an {@link IdleStateEvent} whose state is {@link IdleState#ALL_IDLE}
-     *        will be triggered when neither read nor write was performed for
-     *        the specified period of time.  Specify {@code 0} to disable.
-     * @param unit
-     *        the {@link TimeUnit} of {@code readerIdleTime},
-     *        {@code writeIdleTime}, and {@code allIdleTime}
+     * @param observeOutput  whether or not the consumption of {@code bytes} should be taken into
+     *                       consideration when assessing write idleness. The default is {@code false}.
+     * @param readerIdleTime an {@link IdleStateEvent} whose state is {@link IdleState#READER_IDLE}
+     *                       will be triggered when no read was performed for the specified
+     *                       period of time.  Specify {@code 0} to disable.
+     * @param writerIdleTime an {@link IdleStateEvent} whose state is {@link IdleState#WRITER_IDLE}
+     *                       will be triggered when no write was performed for the specified
+     *                       period of time.  Specify {@code 0} to disable.
+     * @param allIdleTime    an {@link IdleStateEvent} whose state is {@link IdleState#ALL_IDLE}
+     *                       will be triggered when neither read nor write was performed for
+     *                       the specified period of time.  Specify {@code 0} to disable.
+     * @param unit           the {@link TimeUnit} of {@code readerIdleTime},
+     *                       {@code writeIdleTime}, and {@code allIdleTime}
      */
     public IdleStateHandler(boolean observeOutput,
-            long readerIdleTime, long writerIdleTime, long allIdleTime,
-            TimeUnit unit) {
+                            long readerIdleTime, long writerIdleTime, long allIdleTime,
+                            TimeUnit unit) {
         if (unit == null) {
             throw new NullPointerException("unit");
         }
@@ -213,29 +231,8 @@ public class IdleStateHandler extends ChannelDuplexHandler {
     }
 
     /**
-     * Return the readerIdleTime that was given when instance this class in milliseconds.
-     *
+     * 当 handler 被添加到 pipeline 中时，则调用 initialize 方法
      */
-    public long getReaderIdleTimeInMillis() {
-        return TimeUnit.NANOSECONDS.toMillis(readerIdleTimeNanos);
-    }
-
-    /**
-     * Return the writerIdleTime that was given when instance this class in milliseconds.
-     *
-     */
-    public long getWriterIdleTimeInMillis() {
-        return TimeUnit.NANOSECONDS.toMillis(writerIdleTimeNanos);
-    }
-
-    /**
-     * Return the allIdleTime that was given when instance this class in milliseconds.
-     *
-     */
-    public long getAllIdleTimeInMillis() {
-        return TimeUnit.NANOSECONDS.toMillis(allIdleTimeNanos);
-    }
-
     @Override
     public void handlerAdded(ChannelHandlerContext ctx) throws Exception {
         if (ctx.channel().isActive() && ctx.channel().isRegistered()) {
@@ -309,15 +306,24 @@ public class IdleStateHandler extends ChannelDuplexHandler {
         // Avoid the case where destroy() is called before scheduling timeouts.
         // See: https://github.com/netty/netty/issues/143
         switch (state) {
-        case 1:
-        case 2:
-            return;
+            case 1:
+            case 2:
+                return;
         }
 
         state = 1;
         initOutputChanged(ctx);
 
+        //当前时间
         lastReadTime = lastWriteTime = ticksInNanos();
+
+        /**
+         * 只要给定的参数大于0，就创建一个定时任务，每个事件都创建。
+         * 将 state 状态设置为 1，防止重复初始化。
+         * 调用 initOutputChanged 方法，初始化 “监控出站数据属性”，
+         *
+         * 下面的 schedule 方法会调用 eventLoop 的 schedule 方法，将定时任务添加进队列中
+         */
         if (readerIdleTimeNanos > 0) {
             readerIdleTimeout = schedule(ctx, new ReaderIdleTimeoutTask(ctx),
                     readerIdleTimeNanos, TimeUnit.NANOSECONDS);
@@ -395,7 +401,7 @@ public class IdleStateHandler extends ChannelDuplexHandler {
             Channel channel = ctx.channel();
             Unsafe unsafe = channel.unsafe();
             ChannelOutboundBuffer buf = unsafe.outboundBuffer();
-
+            //记录了出站缓冲区相关的数据，buf 对象的 hash 码，和 buf 的剩余缓冲字节数
             if (buf != null) {
                 lastMessageHashCode = System.identityHashCode(buf.current());
                 lastPendingWriteBytes = buf.totalPendingWriteBytes();
@@ -407,12 +413,13 @@ public class IdleStateHandler extends ChannelDuplexHandler {
      * Returns {@code true} if and only if the {@link IdleStateHandler} was constructed
      * with {@link #observeOutput} enabled and there has been an observed change in the
      * {@link ChannelOutboundBuffer} between two consecutive calls of this method.
-     *
+     * <p>
      * https://github.com/netty/netty/issues/6150
      */
     private boolean hasOutputChanged(ChannelHandlerContext ctx, boolean first) {
         if (observeOutput) {
 
+            // 如果最后一次写的时间和上一次记录的时间不一样，说明写操作进行过了，则更新此值
             // We can take this shortcut if the ChannelPromises that got passed into write()
             // appear to complete. It indicates "change" on message level and we simply assume
             // that there's change happening on byte level. If the user doesn't observe channel
@@ -420,7 +427,7 @@ public class IdleStateHandler extends ChannelDuplexHandler {
             // problem and idleness is least of their concerns.
             if (lastChangeCheckTimeStamp != lastWriteTime) {
                 lastChangeCheckTimeStamp = lastWriteTime;
-
+                //但如果，在这个方法的调用间隙修改的，就仍然不触发事件
                 // But this applies only if it's the non-first call.
                 if (!first) {
                     return true;
@@ -430,15 +437,17 @@ public class IdleStateHandler extends ChannelDuplexHandler {
             Channel channel = ctx.channel();
             Unsafe unsafe = channel.unsafe();
             ChannelOutboundBuffer buf = unsafe.outboundBuffer();
-
+            // 如果出站区有数据
             if (buf != null) {
+                // 拿到出站缓冲区的 对象 hashcode
                 int messageHashCode = System.identityHashCode(buf.current());
+                // 拿到这个 缓冲区的 所有字节
                 long pendingWriteBytes = buf.totalPendingWriteBytes();
-
+                //如果和之前的不相等，或者字节数不同，说明，输出有变化，将 "最后一个缓冲区引用" 和 “剩余字节数” 刷新
                 if (messageHashCode != lastMessageHashCode || pendingWriteBytes != lastPendingWriteBytes) {
                     lastMessageHashCode = messageHashCode;
                     lastPendingWriteBytes = pendingWriteBytes;
-
+                    //如果写操作没有进行过，则任务写的慢，不触发空闲事件
                     if (!first) {
                         return true;
                     }
@@ -484,13 +493,16 @@ public class IdleStateHandler extends ChannelDuplexHandler {
 
             if (nextDelay <= 0) {
                 // Reader is idle - set a new timeout and notify the callback.
+                // 用于取消任务 promise
                 readerIdleTimeout = schedule(ctx, this, readerIdleTimeNanos, TimeUnit.NANOSECONDS);
 
                 boolean first = firstReaderIdleEvent;
                 firstReaderIdleEvent = false;
 
                 try {
+                    // 再次提交任务
                     IdleStateEvent event = newIdleStateEvent(IdleState.READER_IDLE, first);
+                    // 触发用户 handler use
                     channelIdle(ctx, event);
                 } catch (Throwable t) {
                     ctx.fireExceptionCaught(t);
@@ -575,4 +587,27 @@ public class IdleStateHandler extends ChannelDuplexHandler {
             }
         }
     }
+
+    /**
+     * Return the readerIdleTime that was given when instance this class in milliseconds.
+     */
+    public long getReaderIdleTimeInMillis() {
+        return TimeUnit.NANOSECONDS.toMillis(readerIdleTimeNanos);
+    }
+
+    /**
+     * Return the writerIdleTime that was given when instance this class in milliseconds.
+     */
+    public long getWriterIdleTimeInMillis() {
+        return TimeUnit.NANOSECONDS.toMillis(writerIdleTimeNanos);
+    }
+
+    /**
+     * Return the allIdleTime that was given when instance this class in milliseconds.
+     */
+    public long getAllIdleTimeInMillis() {
+        return TimeUnit.NANOSECONDS.toMillis(allIdleTimeNanos);
+    }
+
+
 }

@@ -56,8 +56,11 @@ import java.util.concurrent.TimeUnit;
  * bootstrap.childHandler(new MyChannelInitializer());
  * ...
  * </pre>
+ *
  * @see WriteTimeoutHandler
  * @see IdleStateHandler
+ * <p>
+ * 如果在指定的事件没有发生读事件，就会抛出这个异常，并自动关闭这个连接。你可以在 exceptionCaught 方法中处理这个异常。
  */
 public class ReadTimeoutHandler extends IdleStateHandler {
     private boolean closed;
@@ -65,8 +68,7 @@ public class ReadTimeoutHandler extends IdleStateHandler {
     /**
      * Creates a new instance.
      *
-     * @param timeoutSeconds
-     *        read timeout in seconds
+     * @param timeoutSeconds read timeout in seconds
      */
     public ReadTimeoutHandler(int timeoutSeconds) {
         this(timeoutSeconds, TimeUnit.SECONDS);
@@ -75,10 +77,8 @@ public class ReadTimeoutHandler extends IdleStateHandler {
     /**
      * Creates a new instance.
      *
-     * @param timeout
-     *        read timeout
-     * @param unit
-     *        the {@link TimeUnit} of {@code timeout}
+     * @param timeout read timeout
+     * @param unit    the {@link TimeUnit} of {@code timeout}
      */
     public ReadTimeoutHandler(long timeout, TimeUnit unit) {
         super(timeout, 0, 0, unit);
