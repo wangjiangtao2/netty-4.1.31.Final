@@ -121,15 +121,15 @@ public class IdleStateHandler extends ChannelDuplexHandler {
      */
     private final boolean observeOutput;
     /**
-     * 读事件空闲时间，0 则禁用事件
+     * 读事件空闲时间，0 则禁用事件（即测试端一定时间内未接受到被测试端消息）
      */
     private final long readerIdleTimeNanos;
     /**
-     * 写事件空闲时间，0 则禁用事件
+     * 写事件空闲时间，0 则禁用事件（即测试端一定时间内向被测试端发送消息）
      */
     private final long writerIdleTimeNanos;
     /**
-     * 读或写空闲时间，0 则禁用事件
+     * 所有类型的超时时间，0 则禁用事件
      */
     private final long allIdleTimeNanos;
 
@@ -150,6 +150,10 @@ public class IdleStateHandler extends ChannelDuplexHandler {
      * 0 - none, 1 - initialized, 2 - destroyed
      */
     private byte state;
+
+    /**
+     * 读标志
+     */
     private boolean reading;
 
     private long lastChangeCheckTimeStamp;
@@ -173,7 +177,6 @@ public class IdleStateHandler extends ChannelDuplexHandler {
             int readerIdleTimeSeconds,
             int writerIdleTimeSeconds,
             int allIdleTimeSeconds) {
-
         this(readerIdleTimeSeconds, writerIdleTimeSeconds, allIdleTimeSeconds,
                 TimeUnit.SECONDS);
     }
@@ -310,8 +313,9 @@ public class IdleStateHandler extends ChannelDuplexHandler {
             case 2:
                 return;
         }
-
+        //将 state 状态设置为 1，防止重复初始化。
         state = 1;
+        // 调用 initOutputChanged 方法，初始化 “监控出站数据属性”，
         initOutputChanged(ctx);
 
         //当前时间
@@ -319,9 +323,6 @@ public class IdleStateHandler extends ChannelDuplexHandler {
 
         /**
          * 只要给定的参数大于0，就创建一个定时任务，每个事件都创建。
-         * 将 state 状态设置为 1，防止重复初始化。
-         * 调用 initOutputChanged 方法，初始化 “监控出站数据属性”，
-         *
          * 下面的 schedule 方法会调用 eventLoop 的 schedule 方法，将定时任务添加进队列中
          */
         if (readerIdleTimeNanos > 0) {
@@ -488,6 +489,7 @@ public class IdleStateHandler extends ChannelDuplexHandler {
         protected void run(ChannelHandlerContext ctx) {
             long nextDelay = readerIdleTimeNanos;
             if (!reading) {
+                //当前时间-最后一次读时间
                 nextDelay -= ticksInNanos() - lastReadTime;
             }
 
