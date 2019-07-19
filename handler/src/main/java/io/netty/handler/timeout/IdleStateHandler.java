@@ -133,10 +133,9 @@ public class IdleStateHandler extends ChannelDuplexHandler {
      */
     private final long allIdleTimeNanos;
 
+
     private ScheduledFuture<?> readerIdleTimeout;
-
     private long lastReadTime;
-
     private boolean firstReaderIdleEvent = true;
 
     private ScheduledFuture<?> writerIdleTimeout;
@@ -339,20 +338,6 @@ public class IdleStateHandler extends ChannelDuplexHandler {
         }
     }
 
-    /**
-     * This method is visible for testing!
-     */
-    long ticksInNanos() {
-        return System.nanoTime();
-    }
-
-    /**
-     * This method is visible for testing!
-     */
-    ScheduledFuture<?> schedule(ChannelHandlerContext ctx, Runnable task, long delay, TimeUnit unit) {
-        return ctx.executor().schedule(task, delay, unit);
-    }
-
     private void destroy() {
         state = 2;
 
@@ -369,6 +354,21 @@ public class IdleStateHandler extends ChannelDuplexHandler {
             allIdleTimeout = null;
         }
     }
+
+    /**
+     * This method is visible for testing!
+     */
+    long ticksInNanos() {
+        return System.nanoTime();
+    }
+
+    /**
+     * This method is visible for testing!
+     */
+    ScheduledFuture<?> schedule(ChannelHandlerContext ctx, Runnable task, long delay, TimeUnit unit) {
+        return ctx.executor().schedule(task, delay, unit);
+    }
+
 
     /**
      * Is called when an {@link IdleStateEvent} should be fired. This implementation calls
@@ -488,21 +488,21 @@ public class IdleStateHandler extends ChannelDuplexHandler {
         @Override
         protected void run(ChannelHandlerContext ctx) {
             long nextDelay = readerIdleTimeNanos;
+            //如果不是在读中 计算时间差
             if (!reading) {
-                //当前时间-最后一次读时间
+                //nextDelay -= (当前时间-最后一次读时间)
                 nextDelay -= ticksInNanos() - lastReadTime;
             }
 
+            //如果netDelay<=0，说明超时了
             if (nextDelay <= 0) {
                 // Reader is idle - set a new timeout and notify the callback.
-                // 用于取消任务 promise
                 readerIdleTimeout = schedule(ctx, this, readerIdleTimeNanos, TimeUnit.NANOSECONDS);
 
                 boolean first = firstReaderIdleEvent;
                 firstReaderIdleEvent = false;
-
+                //创建一个IdleStateEvent 时间，调用channelIdle方法。该方法会把时间下传到下一个handler的userEventTriggered方法。
                 try {
-                    // 再次提交任务
                     IdleStateEvent event = newIdleStateEvent(IdleState.READER_IDLE, first);
                     // 触发用户 handler use
                     channelIdle(ctx, event);
