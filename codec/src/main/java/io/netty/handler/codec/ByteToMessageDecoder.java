@@ -236,9 +236,8 @@ public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter 
                 //没有解码出数据, 通过decode方法，对象没有解析出来 ，如果输出的out列表长度没变化，说明解码没有成功
                 // 业务解码器遵循契约： 如果业务解码器认为当前的字节缓冲区无法完成业务层的解码，需要将readIndex复位，告诉netty解码条件不满足应当退出解码，继续读取数据报
                 if (outSize == out.size()) { //子类未对out处理
-                    //如果用户解码器没有消费ByteBuf，则说明是个半包消息，需要由I/O线程继续读取后续的数据报，要退出循环
-                        //oldInputLength 执行该方法传进来累加区的字节数量  in 看子类对 in是否 decode 处理过
-                    if (oldInputLength == in.readableBytes()) {   // 没有消费ByteBuf，说明是个半包消息，需要继续读取后续的数据报，退出循环
+                    //通过decode方法，并没有从in中读取数据,有可能说明当前累加器里面数据并不是一个完整数据包
+                    if (oldInputLength == in.readableBytes()) {
                         break;
                     } else {
                         // 从当前in里面读取了数据，只不过还没有解析到对象，那就继续进行while循环，
