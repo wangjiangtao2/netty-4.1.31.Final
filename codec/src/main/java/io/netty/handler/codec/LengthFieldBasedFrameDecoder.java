@@ -206,9 +206,10 @@ public class LengthFieldBasedFrameDecoder extends ByteToMessageDecoder {
 
     //定义长度域位于发送的字节数组中的下标。换句话说：发送的字节数组中下标为${lengthFieldOffset}的地方是长度域的开始地方
     private final int lengthFieldOffset;
-    //数据长度字段的所占的字节数，上面的协议中写的是2个字节，所以取值为2
+    //长度字段的所占的字节数，往后数的字节数
     // 满足公式: 发送的字节数组bytes.length - lengthFieldLength = bytes[lengthFieldOffset, lengthFieldOffset+lengthFieldLength] + lengthFieldOffset + lengthAdjustment 
     private final int lengthFieldLength;    // 长度域的长度
+
     private final int lengthFieldEndOffset;
     // 基于长度域的长度再加上这个值就表示真正的数据包长度。  数据包长度(14) - lengthFieldOffset - lengthFieldLength - 长度域的值(12)
     private final int lengthAdjustment;
