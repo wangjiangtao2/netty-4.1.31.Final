@@ -74,7 +74,7 @@ public abstract class AbstractNioChannel extends AbstractChannel {
     protected final int readInterestOp;
 
     /**
-     * 是Channel注册到EventLoop后返回的选择键;
+     * 是Channel注册到Selector后返回的选择键;
      * 由于Channel会面临多个业务线程的并发写操作，当SelectionKey有SelectionKey修改之后，为了能让其他业务线程感知到变化，所以需要用volatile保证修改的可见性。
      */
     volatile SelectionKey selectionKey;
