@@ -169,7 +169,7 @@ public abstract class SingleThreadEventExecutor extends AbstractScheduledEventEx
         this.maxPendingTasks = Math.max(16, maxPendingTasks);
         //首先将executor线程创建器保存起来，后面创建NioEventLoop对应底层线程要用到；
         this.executor = ObjectUtil.checkNotNull(executor, "executor");
-        //这里创建的是MPSC 队列，无锁，所以高效率。 对应的是NioEventLoop
+        //这里创建的是MPSC 队列，无锁，所以高效率。适用于单消费者多生产者场景 对应的是NioEventLoop
         taskQueue = newTaskQueue(this.maxPendingTasks);
         rejectedExecutionHandler = ObjectUtil.checkNotNull(rejectedHandler, "rejectedHandler");
     }
